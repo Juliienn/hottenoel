@@ -1,0 +1,32 @@
+{
+  "name": "hotte-familiale",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && prisma migrate deploy && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "test:db": "node --env-file=.env.test node_modules/prisma/build/index.js migrate deploy",
+    "test:e2e": "playwright test",
+    "creer-hote": "tsx scripts/creer-hote.ts",
+    "importer-ancien-site": "tsx scripts/importer-ancien-site.ts",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "next": "15.5.29",
+    "react": "19.1.10",
+    "react-dom": "19.1.10"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.15.3",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "prisma": "6.19.3",
+    "tsx": "4.19.4",
+    "typescript": "5.9.3"
+  }
+}

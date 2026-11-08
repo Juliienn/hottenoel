@@ -1,0 +1,171 @@
+// Schéma de La Hotte familiale.
+// Règle d'or : toute autorisation est vérifiée dans src/lib/services/*, côté
+// serveur. L'interface ne fait que masquer ce que le serveur refuserait déjà.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Neon : URL directe (sans pooler) pour les migrations. En local, la même.
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  HOST
+  MEMBER
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  /// Identifiant de connexion, toujours en minuscules. Null = profil importé
+  /// de l'ancien site, pas encore activé par l'Hôte.
+  login              String?  @unique
+  displayName        String
+  role               Role     @default(MEMBER)
+  /// scrypt, format "scrypt$N$r$p$sel$hash". Jamais renvoyé au navigateur.
+  passwordHash       String?
+  /// Vrai après création ou réinitialisation par l'Hôte : le membre doit
+  /// choisir son propre mot de passe avant d'accéder au reste du site.
+  mustChangePassword Boolean  @default(true)
+  active             Boolean  @default(true)
+  about              String   @default("")
+  /// Clés de l'avatar dessiné (sexe, coiffure, couleurs). Validées à la lecture.
+  avatar             Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  sessions         Session[]
+  items            WishItem[]
+  claims           Claim[]
+  santaEvents      SantaParticipant[]
+  exclusionsGiver  SantaExclusion[]  @relation("ExclusionGiver")
+  exclusionsTarget SantaExclusion[]  @relation("ExclusionReceiver")
+  santaGives       SantaAssignment[] @relation("AssignmentGiver")
+  santaReceives    SantaAssignment[] @relation("AssignmentReceiver")
+}
+
+model Session {
+  /// sha256 du jeton du cookie : une fuite de la base ne donne aucune session.
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Journal des tentatives de connexion, pour bloquer les essais répétés.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  login     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([login, createdAt])
+  @@index([ip, createdAt])
+}
+
+model WishItem {
+  id         String   @id @default(cuid())
+  ownerId    String
+  title      String
+  /// Prix en centimes ; null = « prix libre ».
+  priceCents Int?
+  link       String   @default("")
+  note       String   @default("")
+  wish       Int      @default(2)
+  /// Retiré par son propriétaire alors que quelqu'un l'avait réservé : on le
+  /// garde, masqué, pour que l'acheteur voie « retiré de la liste » au lieu
+  /// de perdre sa réservation sans explication.
+  deletedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  claim      Claim?
+
+  @@index([ownerId])
+}
+
+/// Une réservation par cadeau au plus : l'unicité est garantie par la base,
+/// deux clics simultanés ne peuvent pas créer de doublon.
+model Claim {
+  id        String   @id @default(cuid())
+  itemId    String   @unique
+  claimerId String
+  createdAt DateTime @default(now())
+  item      WishItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  claimer   User     @relation(fields: [claimerId], references: [id], onDelete: Cascade)
+
+  @@index([claimerId])
+}
+
+enum SantaStatus {
+  OPEN
+  DRAWN
+}
+
+enum BudgetKind {
+  MAX
+  INDICATIF
+}
+
+model SantaEvent {
+  id          String      @id @default(cuid())
+  name        String
+  /// Journées "AAAA-MM-JJ" en heure de Paris, jamais un DateTime.
+  giftDate    String
+  drawDate    String
+  budgetCents Int?
+  budgetKind  BudgetKind  @default(INDICATIF)
+  status      SantaStatus @default(OPEN)
+  drawnAt     DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  participants SantaParticipant[]
+  exclusions   SantaExclusion[]
+  assignments  SantaAssignment[]
+}
+
+model SantaParticipant {
+  eventId String
+  userId  String
+  event   SantaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+}
+
+/// « giver ne doit pas offrir à receiver » (sens unique).
+model SantaExclusion {
+  id         String     @id @default(cuid())
+  eventId    String
+  giverId    String
+  receiverId String
+  event      SantaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  giver      User       @relation("ExclusionGiver", fields: [giverId], references: [id], onDelete: Cascade)
+  receiver   User       @relation("ExclusionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, giverId, receiverId])
+}
+
+/// Résultat du tirage. onDelete: Restrict sur les membres : supprimer un
+/// participant d'un tirage effectué casserait le résultat des autres, le
+/// service refuse donc la suppression (l'Hôte peut désactiver le compte).
+model SantaAssignment {
+  eventId    String
+  giverId    String
+  receiverId String
+  viewedAt   DateTime?
+  event      SantaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  giver      User       @relation("AssignmentGiver", fields: [giverId], references: [id], onDelete: Restrict)
+  receiver   User       @relation("AssignmentReceiver", fields: [receiverId], references: [id], onDelete: Restrict)
+
+  @@id([eventId, giverId])
+  @@unique([eventId, receiverId])
+}
