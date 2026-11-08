@@ -67,27 +67,13 @@ mot de passe). En ligne de commande : `npm run creer-hote -- "Prénom" "mot de p
 5. Depuis l'**Espace Hôte**, créer les profils (prénom, avatar, portable) et
    envoyer les accès par SMS.
 
-### Déploiement automatique à chaque mise à jour de `main`
+### Déploiement automatique
 
-`.github/workflows/deploy.yml` : à chaque push (ou merge) sur `main`, GitHub
-vérifie les types et lance les tests sur une base Postgres jetable ; si tout
-passe, il déploie en production sur Vercel (`vercel deploy --prod`, build fait
-par Vercel avec ses variables, migrations comprises). Si un test échoue, la
-version en ligne ne change pas. `vercel.json` coupe le déploiement natif de
-Vercel sur `main` pour éviter un second déploiement non testé ; les branches
-gardent leurs aperçus Vercel.
-
-Configuration, une seule fois :
-
-1. Sur vercel.com/account/tokens, créer un jeton.
-2. En local : `npx vercel link` (choisir le projet existant) puis lire
-   `.vercel/project.json` : `orgId` et `projectId`.
-3. Sur GitHub, Settings → Secrets and variables → Actions → New repository
-   secret : `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
-4. Vérifier : onglet Actions → « Tester et déployer » → Run workflow. Les deux
-   étapes doivent passer au vert et le résumé donne l'adresse déployée.
-
-Sans ces secrets, plus rien n'est déployé et le workflow échoue en rouge.
+Le projet Vercel étant relié au dépôt GitHub, chaque mise à jour de `main` est
+déployée automatiquement par Vercel. En parallèle, `.github/workflows/deploy.yml`
+lance la vérification des types et les tests (sur une base Postgres jetable) :
+s'il passe au rouge, revenir à la version précédente dans Vercel
+(Deployments → Promote) puis corriger.
 
 La migration `20261108180000_profils_sans_identifiant` est purement additive
 (colonne `User.phone`, table `Setting`) : aucun compte existant n'est modifié.

@@ -1,0 +1,49 @@
+# Contrôle à chaque mise à jour de main : vérification des types et tests
+# sur une vraie base Postgres. Le déploiement lui-même est fait par Vercel
+# (projet relié au dépôt GitHub) ; si ce workflow passe au rouge, la version
+# déployée contient probablement un bug : revenir à la précédente depuis
+# Vercel (Deployments → Promote) et corriger.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: hotte_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5433/hotte_test
+      DIRECT_URL: postgresql://postgres@127.0.0.1:5433/hotte_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Vérification des types
+        run: npm run typecheck
+      - name: Migrations sur la base de test
+        run: npx prisma migrate deploy
+      - name: Tests (sécurité, profils, SMS, Secret Santa)
+        run: npm test
