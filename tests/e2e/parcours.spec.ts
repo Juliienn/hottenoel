@@ -511,5 +511,12 @@ test.describe("affichage smartphone", () => {
     expect(overflowReveal).toBeLessThanOrEqual(0);
     await overlay.getByRole("button", { name: "Retourner à mon espace" }).click();
     await expect(page.locator(".reveal .to")).toBeVisible();
+    // L'Hôte supprime l'événement alors que le tirage a eu lieu.
+    await expect(page.getByText("supprimer l'événement efface aussi son résultat")).toBeVisible();
+    await page.getByRole("button", { name: "Supprimer cet événement" }).click();
+    await page.getByRole("button", { name: "Supprimer définitivement, tirage compris" }).click();
+    await expect(page).toHaveURL(/\/secret-santa$/);
+    await expect(page.locator(".event-card", { hasText: "Noël 2026" })).toHaveCount(0);
+    await expect(page.locator(".event-card", { hasText: "Anniversaire" })).toHaveCount(1);
   });
 });

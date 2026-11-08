@@ -105,7 +105,7 @@ export async function updateEventAction(_prev: ActionState, fd: FormData): Promi
 
 export async function deleteEventAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
-  const state = await run(() => deleteEvent(user, str(fd, "id")));
+  const state = await run(() => deleteEvent(user, str(fd, "id"), str(fd, "confirmDrawn") === "1"));
   if (state.ok) { revalidatePath("/", "layout"); redirect("/secret-santa"); }
   return state;
 }

@@ -111,7 +111,7 @@ describe("tirage", () => {
     await runDraw(f.host, ev.id);
     await rejectsWith(setParticipants(f.host, ev.id, [f.tom.id, f.sam.id, f.julie.id]), "CONFLICT");
     await rejectsWith(addExclusion(f.host, ev.id, f.tom.id, f.sam.id, false), "CONFLICT");
-    await rejectsWith(deleteEvent(f.host, ev.id), "CONFLICT");
+    await rejectsWith(deleteEvent(f.host, ev.id), "CONFLICT", /confirme/);
     await rejectsWith(updateEvent(f.host, ev.id, { name: "Noël", giftDate: "2099-12-25", drawDate: "2000-01-02", budget: "30", budgetKind: "MAX" }), "INVALID");
     await updateEvent(f.host, ev.id, { name: "Noël en famille", ...base, budget: "40" });
   });
@@ -200,5 +200,45 @@ describe("révélation animée", () => {
       const row = await prisma.santaAssignment.findUniqueOrThrow({ where: { eventId_giverId: { eventId: ev.id, giverId: u.id } } });
       assert.equal((await revealMyReceiver(u, ev.id)).id, row.receiverId);
     }
+  });
+});
+
+describe("suppression d'un événement", () => {
+  test("après le tirage : possible pour l'Hôte avec confirmation, tout est effacé", async () => {
+    const f = await family();
+    const ev = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
+    await addExclusion(f.host, ev.id, f.tom.id, f.sam.id, false);
+    await runDraw(f.host, ev.id);
+    await prisma.santaMessage.create({ data: { eventId: ev.id, kind: "TIRAGE", text: "C'est fait !" } });
+    await rejectsWith(deleteEvent(f.tom, ev.id, true), "FORBIDDEN");
+    await rejectsWith(deleteEvent(f.host, ev.id), "CONFLICT");
+    await deleteEvent(f.host, ev.id, true);
+    assert.equal(await prisma.santaEvent.count(), 0);
+    for (const n of [await prisma.santaAssignment.count(), await prisma.santaParticipant.count(), await prisma.santaExclusion.count(), await prisma.santaMessage.count()]) assert.equal(n, 0);
+    await rejectsWith(getEvent(f.tom, ev.id), "NOT_FOUND");
+    await rejectsWith(revealMyReceiver(f.tom, ev.id), "NOT_FOUND");
+    assert.equal((await listEvents(f.tom)).length, 0);
+    // Les comptes et les autres données restent intacts.
+    assert.equal(await prisma.user.count(), 5);
+  });
+
+  test("un événement terminé peut aussi être supprimé", async () => {
+    const f = await family();
+    const ev = await createEvent(f.host, { name: "Noël 2025", ...base }, f.all.map((u) => u.id));
+    await runDraw(f.host, ev.id);
+    await prisma.santaEvent.update({ where: { id: ev.id }, data: { giftDate: "2025-12-25", drawDate: "2025-12-01" } });
+    await deleteEvent(f.host, ev.id, true);
+    assert.equal(await prisma.santaEvent.count(), 0);
+  });
+
+  test("les autres événements ne sont pas touchés", async () => {
+    const f = await family();
+    const e1 = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
+    const e2 = await createEvent(f.host, { name: "Anniversaire", ...base }, [f.tom.id, f.sam.id, f.julie.id]);
+    await runDraw(f.host, e1.id); await runDraw(f.host, e2.id);
+    const before = await revealMyReceiver(f.tom, e2.id);
+    await deleteEvent(f.host, e1.id, true);
+    assert.equal((await revealMyReceiver(f.tom, e2.id)).id, before.id);
+    assert.equal(await prisma.santaAssignment.count({ where: { eventId: e2.id } }), 3);
   });
 });

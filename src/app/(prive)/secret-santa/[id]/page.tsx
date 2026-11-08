@@ -232,15 +232,26 @@ export default async function EventPage({ params, searchParams }: {
                 ) : <p className="hint">Ajoute d&apos;abord des participants.</p>}
               </div>
 
-              <div className="box">
-                <h2>Supprimer l&apos;événement</h2>
-                <ActionForm action={deleteEventAction} className="grid">
-                  <input type="hidden" name="id" value={id} />
-                  <div className="actions"><ConfirmSubmit label="Supprimer cet événement" confirmLabel="Supprimer définitivement" /></div>
-                </ActionForm>
-              </div>
             </>
           ) : null}
+
+          {/* Suppression possible à tout moment, tirage effectué ou événement terminé compris. */}
+          <div className="box">
+            <h2>Supprimer l&apos;événement</h2>
+            {ev.status === "DRAWN" ? (
+              <p className="notice warn" style={{ marginTop: 8 }}>
+                Le tirage a déjà eu lieu : supprimer l&apos;événement efface aussi son résultat, définitivement. Les participants ne pourront plus voir à qui ils offrent, et ce tirage ne pourra pas être retrouvé.
+              </p>
+            ) : null}
+            <ActionForm action={deleteEventAction} className="grid">
+              <input type="hidden" name="id" value={id} />
+              {ev.status === "DRAWN" ? <input type="hidden" name="confirmDrawn" value="1" /> : null}
+              <div className="actions">
+                <ConfirmSubmit label="Supprimer cet événement"
+                  confirmLabel={ev.status === "DRAWN" ? "Supprimer définitivement, tirage compris" : "Supprimer définitivement"} />
+              </div>
+            </ActionForm>
+          </div>
         </>
       ) : null}
     </div>

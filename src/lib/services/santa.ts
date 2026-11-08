@@ -179,11 +179,16 @@ export async function updateEvent(actor: SessionUser, id: string, input: EventIn
   await prisma.santaEvent.update({ where: { id }, data });
 }
 
-export async function deleteEvent(actor: SessionUser, id: string) {
+/** Supprime l'événement et tout ce qui en dépend (participants, exclusions,
+ * messages et, s'il a eu lieu, le résultat du tirage). Après un tirage, la
+ * suppression doit être confirmée explicitement (confirmDrawn) : une page
+ * restée ouverte depuis avant le tirage ne peut pas l'effacer par mégarde. */
+export async function deleteEvent(actor: SessionUser, id: string, confirmDrawn = false) {
   assertHost(actor); assertReady(actor);
   const ev = await loadEvent(id);
-  // Un tirage effectué est une archive : on ne la détruit pas par mégarde.
-  if (ev.status === "DRAWN") throw new AppError("CONFLICT", "Un événement dont le tirage a eu lieu ne peut pas être supprimé.");
+  if (ev.status === "DRAWN" && !confirmDrawn) {
+    throw new AppError("CONFLICT", "Le tirage de cet événement a déjà eu lieu : confirme que tu veux aussi effacer son résultat.");
+  }
   await prisma.santaEvent.delete({ where: { id } });
 }
 
