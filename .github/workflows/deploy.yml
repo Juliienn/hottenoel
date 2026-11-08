@@ -1,0 +1,82 @@
+# Déploiement automatique : à chaque mise à jour de main, on vérifie le code
+# (types + tests sur une vraie base Postgres), puis, seulement si tout passe,
+# on déploie en production sur Vercel. Un déploiement raté ne remplace jamais
+# la version en ligne.
+#
+# Secrets à créer dans GitHub (Settings → Secrets and variables → Actions) :
+#   VERCEL_TOKEN       jeton créé sur vercel.com/account/tokens
+#   VERCEL_ORG_ID      "orgId" de .vercel/project.json (après `npx vercel link`)
+#   VERCEL_PROJECT_ID  "projectId" du même fichier
+# vercel.json coupe le déploiement automatique natif de Vercel sur main (sinon
+# chaque push serait déployé deux fois, dont une fois sans tests) : sans ces
+# secrets, rien n'est déployé, et le workflow échoue en rouge pour le signaler.
+name: Tester et déployer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # bouton « Run workflow » pour redéployer à la main
+
+# Deux pushes rapprochés : le plus récent l'emporte, jamais deux déploiements en parallèle.
+concurrency:
+  group: production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: hotte_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres@127.0.0.1:5433/hotte_test
+      DIRECT_URL: postgresql://postgres@127.0.0.1:5433/hotte_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Vérification des types
+        run: npm run typecheck
+      - name: Migrations sur la base de test
+        run: npx prisma migrate deploy
+      - name: Tests (sécurité, profils, SMS, Secret Santa)
+        run: npm test
+
+  deploiement:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secrets Vercel présents ?
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Rien n'a été déployé : configure VERCEL_TOKEN, VERCEL_ORG_ID et VERCEL_PROJECT_ID dans les secrets du dépôt (cf. README)."
+            exit 1
+          fi
+      # Build fait par Vercel lui-même (pas de --prebuilt) : il utilise les
+      # variables de production du projet, y compris celles marquées
+      # « sensibles », et applique les migrations (npm run build).
+      - name: Déployer en production
+        run: |
+          url=$(npx --yes vercel@39.1.1 deploy --prod --yes --token "$VERCEL_TOKEN")
+          echo "Version en ligne : $url"
+          echo "### Déployé : $url" >> "$GITHUB_STEP_SUMMARY"
