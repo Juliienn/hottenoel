@@ -28,11 +28,7 @@ export function EventFields({ ev, lockDrawDate = false }: {
   );
 }
 
-export function budgetLabel(cents: number | null, kind: string): string {
-  if (cents == null) return "Pas de budget fixé";
-  const v = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(cents / 100);
-  return kind === "MAX" ? `${v} maximum` : `Environ ${v}`;
-}
+export { budgetLabel } from "@/lib/format";
 
 export function StatusPill({ status, past }: { status: string; past: boolean }) {
   if (past) return <span className="pill past">Terminé</span>;

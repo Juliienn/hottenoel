@@ -120,6 +120,42 @@ Le profil arrive sans mot de passe (donc absent de l'écran de connexion) ;
 l'Hôte l'active depuis l'Espace Hôte (« Gérer ce profil » → « Activer le
 profil », ou bouton SMS). Le script est rejouable sans créer de doublon.
 
+## Secret Santa : annonces et révélation
+
+**Prévenir les participants.** Juste après la création d'un événement, puis
+juste après le tirage, l'Hôte voit la question « Souhaites-tu prévenir les
+participants ? » (« Envoyer un message » ou « Plus tard » ; les deux annonces
+restent ensuite disponibles dans « Organisation »). Le message est prérempli
+(nom, dates, budget, participants ; ou « le tirage a eu lieu ») et modifiable,
+puis envoyé après confirmation :
+
+- **sur le site, toujours** : bandeau « Nouveau message de l'Hôte » et
+  rubrique « Messages de l'Hôte » sur la page de l'événement, visibles des
+  seuls participants (rien à configurer) ;
+- **par SMS automatique** si Twilio ou Brevo est configuré (cf. plus haut) :
+  un SMS par participant ayant un numéro, compte rendu par personne ;
+- **sinon**, un lien « Ouvrir l'app SMS » par participant (message prérempli,
+  l'Hôte appuie sur Envoyer : l'envoi n'est pas confirmé par le site).
+
+Destinataires relus en base : uniquement les participants de l'événement.
+Le message de tirage est généré sans aucune donnée du tirage.
+
+**Révélation animée.** Le destinataire n'est plus dans la page : le
+participant clique sur « Découvrir mon Secret Santa », une animation plein
+écran de ~12 s (neige, « Ho Ho Ho… », cadeau qui tremble puis s'ouvre,
+confettis) révèle le prénom. Le serveur ne renvoie que le destinataire de
+l'utilisateur connecté (le donneur n'est jamais un paramètre de la requête),
+par simple lecture du tirage enregistré : « Revoir l'animation » rejoue tout,
+avec exactement le même résultat. L'Hôte voit « A découvert son tirage »
+quand l'animation a été lancée.
+
+Musique : la chanson démarre au clic (donc autorisée par le navigateur) à
+45 s, pour que l'ouverture du cadeau (8 s plus tard) tombe sur l'entrée de la
+batterie, à **53 s** dans la vidéo officielle. Si ce n'est pas juste à
+l'écoute, changer `SONG_DROP_S` dans
+`src/app/(prive)/secret-santa/[id]/SantaReveal.tsx`. Bouton 🔊/🔇 (mémorisé),
+« Passer », et animation sans musique si YouTube ne répond pas dans les 3,5 s.
+
 ## Écran d'accueil
 
 À la première ouverture du site dans un onglet, une animation de ~5 s (nuit

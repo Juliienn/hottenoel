@@ -88,21 +88,41 @@ export async function getEvent(actor: SessionUser, id: string) {
   if (!ev || (actor.role !== "HOST" && ev.participants.length === 0)) throw notFound("Événement");
   const isParticipant = ev.participants.length > 0;
 
-  let myReceiver: { id: string; displayName: string; avatar: ReturnType<typeof normalizeAvatar> } | null = null;
+  // Le nom du destinataire n'est JAMAIS envoyé avec la page tant que le
+  // participant ne l'a pas découvert (bouton + animation, cf. revealMyReceiver) :
+  // impossible de le lire dans le code source de la page avant.
+  let myDraw: { state: "none" } | { state: "hidden" } | { state: "seen"; receiver: Receiver } = { state: "none" };
   if (ev.status === "DRAWN" && isParticipant) {
     const a = await prisma.santaAssignment.findUnique({
       where: { eventId_giverId: { eventId: id, giverId: actor.id } },
       select: { viewedAt: true, receiver: { select: { id: true, displayName: true, avatar: true } } },
     });
-    if (a) {
-      myReceiver = { id: a.receiver.id, displayName: a.receiver.displayName, avatar: normalizeAvatar(a.receiver.avatar) };
-      if (!a.viewedAt) {
-        await prisma.santaAssignment.update({ where: { eventId_giverId: { eventId: id, giverId: actor.id } }, data: { viewedAt: new Date() } });
-      }
-    }
+    if (a) myDraw = a.viewedAt ? { state: "seen", receiver: toReceiver(a.receiver) } : { state: "hidden" };
   }
   const { _count, participants: _p, ...rest } = ev;
-  return { ...rest, participantCount: _count.participants, isParticipant, past: isPast(ev.giftDate), myReceiver };
+  return { ...rest, participantCount: _count.participants, isParticipant, past: isPast(ev.giftDate), myDraw };
+}
+
+type Receiver = { id: string; displayName: string; avatar: ReturnType<typeof normalizeAvatar> };
+const toReceiver = (r: { id: string; displayName: string; avatar: unknown }): Receiver =>
+  ({ id: r.id, displayName: r.displayName, avatar: normalizeAvatar(r.avatar) });
+
+/** Destinataire de l'utilisateur connecté pour cet événement, et lui seul :
+ * le donneur est TOUJOURS l'acteur authentifié, jamais un paramètre venu du
+ * navigateur. Simple lecture du tirage enregistré : la rejouer ne retire
+ * jamais au sort. Marque le tirage comme découvert (vu par l'Hôte). */
+export async function revealMyReceiver(actor: SessionUser, eventId: string): Promise<Receiver> {
+  assertReady(actor);
+  const a = await prisma.santaAssignment.findUnique({
+    where: { eventId_giverId: { eventId, giverId: actor.id } },
+    select: { viewedAt: true, receiver: { select: { id: true, displayName: true, avatar: true } } },
+  });
+  // Non participant, tirage pas encore fait ou événement inventé : même réponse.
+  if (!a) throw notFound("Tirage");
+  if (!a.viewedAt) {
+    await prisma.santaAssignment.update({ where: { eventId_giverId: { eventId, giverId: actor.id } }, data: { viewedAt: new Date() } });
+  }
+  return toReceiver(a.receiver);
 }
 
 /** Données d'administration (Hôte) : participants, exclusions, qui a consulté

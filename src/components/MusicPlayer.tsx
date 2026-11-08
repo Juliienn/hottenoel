@@ -25,7 +25,11 @@ const STORE = "hotte-musique";
 export const MUSIC_EVENT = "hotte-musique";
 export const MUSIC_STATE_EVENT = "hotte-musique-etat";
 export type MusicState = "loading" | "playing" | "blocked" | "unavailable";
-export type MusicCommand = "auto" | "play" | "stop";
+//  - { type: "play-at", seconds } : lecture (après un clic) à une position
+//    précise, ou repositionnement si le lecteur existe déjà (révélation du
+//    Secret Santa, qui cale l'ouverture du cadeau sur la musique).
+//  - "mute" / "unmute" : son coupé sans arrêter la lecture.
+export type MusicCommand = "auto" | "play" | "stop" | "mute" | "unmute" | { type: "play-at"; seconds: number };
 const announce = (s: MusicState) => window.dispatchEvent(new CustomEvent(MUSIC_STATE_EVENT, { detail: s }));
 const AUTOPLAY_GRACE_MS = 2500;
 const VOLUME = 45;
@@ -106,11 +110,22 @@ export function MusicPlayer() {
 
   /** auto = sans clic : en cas de refus ou d'échec, retour discret à l'état
    * initial (le bouton « Musique » reste là) au lieu d'un message d'erreur. */
-  const start = useCallback(async (auto = false) => {
+  const start = useCallback(async (auto = false, at?: number) => {
     // Une tentative automatique en cours est remplacée par un vrai départ,
     // créé pendant le clic (seul cas où le son est garanti).
     if (!auto && statusRef.current === "probing") destroy();
-    if (playerRef.current) { playerRef.current.playVideo(); return; }
+    clearInterval(fadeRef.current);
+    if (playerRef.current) {
+      const p = playerRef.current;
+      try {
+        p.setVolume(VOLUME); p.unMute();
+        if (at != null) p.seekTo(at, true);
+        p.playVideo();
+      } catch { /* lecteur pas encore prêt : onReady s'en chargera */ }
+      // Déjà en lecture : un saut ne produit pas toujours de nouvel état « lecture ».
+      if (statusRef.current === "playing") setTimeout(() => announce("playing"), 250);
+      return;
+    }
     if (auto && !(await soundAllowedWithoutClick())) { announce("blocked"); return; }
     if (auto && statusRef.current !== "off" && statusRef.current !== "resumable") return; // clic entre-temps
     setStatus(auto ? "probing" : "loading");
@@ -129,7 +144,7 @@ export function MusicPlayer() {
     // React pour que React ne tente jamais de le réconcilier.
     const target = document.createElement("div");
     host.replaceChildren(target);
-    const startAt = auto ? 0 : Math.floor(readStore()?.t ?? 0);
+    const startAt = at != null ? Math.max(0, Math.floor(at)) : auto ? 0 : Math.floor(readStore()?.t ?? 0);
     writeStore({ t: startAt });
     let grace: ReturnType<typeof setTimeout> | undefined;
     const player = new window.YT.Player(target, {
@@ -166,7 +181,10 @@ export function MusicPlayer() {
   useEffect(() => {
     const onCommand = (e: Event) => {
       const cmd = (e as CustomEvent<MusicCommand>).detail;
-      if (cmd === "play") void start(false);
+      if (typeof cmd === "object" && cmd?.type === "play-at") void start(false, cmd.seconds);
+      else if (cmd === "mute") { try { playerRef.current?.mute(); } catch { /* ignoré */ } }
+      else if (cmd === "unmute") { try { playerRef.current?.unMute(); } catch { /* ignoré */ } }
+      else if (cmd === "play") void start(false);
       else if (cmd === "auto") void start(true);
       else if (cmd === "stop") fadeOut();
     };
@@ -184,10 +202,12 @@ export function MusicPlayer() {
 
   /** Fin de l'accueil : baisse le volume en ~0,8 s puis arrête le lecteur.
    * Rien n'est mémorisé : pas de « Reprendre », juste le bouton « Musique ». */
+  const fadeRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const fadeOut = useCallback(() => {
     const player = playerRef.current;
     if (!player) { if (statusRef.current === "probing" || statusRef.current === "loading") stop(); return; }
     let v = VOLUME;
+    clearInterval(fadeRef.current);
     const id = setInterval(() => {
       if (playerRef.current !== player) { clearInterval(id); return; }
       v -= VOLUME / 10;
@@ -195,6 +215,7 @@ export function MusicPlayer() {
       clearInterval(id);
       stop();
     }, 80);
+    fadeRef.current = id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

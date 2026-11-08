@@ -13,3 +13,10 @@ export function safeHref(url: string): string | null {
 }
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
+
+/** Budget d'un Secret Santa, en clair. */
+export function budgetLabel(cents: number | null, kind: string): string {
+  if (cents == null) return "Pas de budget fixé";
+  const v = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(cents / 100);
+  return kind === "MAX" ? `${v} maximum` : `Environ ${v}`;
+}

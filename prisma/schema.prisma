@@ -46,14 +46,15 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  sessions         Session[]
-  items            WishItem[]
-  claims           Claim[]
-  santaEvents      SantaParticipant[]
-  exclusionsGiver  SantaExclusion[]  @relation("ExclusionGiver")
-  exclusionsTarget SantaExclusion[]  @relation("ExclusionReceiver")
-  santaGives       SantaAssignment[] @relation("AssignmentGiver")
-  santaReceives    SantaAssignment[] @relation("AssignmentReceiver")
+  sessions          Session[]
+  items             WishItem[]
+  claims            Claim[]
+  santaEvents       SantaParticipant[]
+  exclusionsGiver   SantaExclusion[]   @relation("ExclusionGiver")
+  exclusionsTarget  SantaExclusion[]   @relation("ExclusionReceiver")
+  santaGives        SantaAssignment[]  @relation("AssignmentGiver")
+  santaReceives     SantaAssignment[]  @relation("AssignmentReceiver")
+  santaMessagesSeen SantaMessageSeen[]
 }
 
 model Session {
@@ -81,21 +82,21 @@ model LoginAttempt {
 }
 
 model WishItem {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   ownerId    String
   title      String
   /// Prix en centimes ; null = « prix libre ».
   priceCents Int?
-  link       String   @default("")
-  note       String   @default("")
-  wish       Int      @default(2)
+  link       String    @default("")
+  note       String    @default("")
+  wish       Int       @default(2)
   /// Retiré par son propriétaire alors que quelqu'un l'avait réservé : on le
   /// garde, masqué, pour que l'acheteur voie « retiré de la liste » au lieu
   /// de perdre sa réservation sans explication.
   deletedAt  DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   claim      Claim?
 
   @@index([ownerId])
@@ -140,6 +141,7 @@ model SantaEvent {
   participants SantaParticipant[]
   exclusions   SantaExclusion[]
   assignments  SantaAssignment[]
+  messages     SantaMessage[]
 }
 
 model SantaParticipant {
@@ -186,4 +188,37 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+enum SantaMessageKind {
+  /// Annonce de l'événement (après sa création).
+  ANNONCE
+  /// « Le tirage a eu lieu » : ne contient jamais les attributions.
+  TIRAGE
+}
+
+/// Message de l'Hôte aux participants d'un événement. Affiché sur le site aux
+/// seuls participants (et à l'Hôte), éventuellement envoyé aussi par SMS.
+model SantaMessage {
+  id        String             @id @default(cuid())
+  eventId   String
+  kind      SantaMessageKind
+  text      String
+  createdAt DateTime           @default(now())
+  event     SantaEvent         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seen      SantaMessageSeen[]
+
+  @@index([eventId])
+}
+
+/// Qui a lu quel message (bandeau « nouveau message » tant qu'il n'est pas lu).
+model SantaMessageSeen {
+  messageId String
+  userId    String
+  seenAt    DateTime     @default(now())
+  message   SantaMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId])
 }

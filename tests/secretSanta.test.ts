@@ -6,7 +6,7 @@ import { freshIp, makeUser, PASSWORD, prisma, resetDb } from "./helpers/db";
 import { login } from "../src/lib/auth/core";
 import { AppError } from "../src/lib/services/errors";
 import {
-  addExclusion, createEvent, deleteEvent, getEvent, getEventAdmin, listEvents, revealAssignments, runDraw, setParticipants, updateEvent,
+  addExclusion, createEvent, deleteEvent, getEvent, getEventAdmin, listEvents, revealAssignments, revealMyReceiver, runDraw, setParticipants, updateEvent,
 } from "../src/lib/services/santa";
 
 const rejectsWith = async (p: Promise<unknown>, code: AppError["code"], re?: RegExp) => {
@@ -31,14 +31,18 @@ describe("tirage", () => {
     await runDraw(f.host, ev.id);
     const seen = new Set<string>();
     for (const u of f.all) {
+      // Avant la découverte, la page ne contient même pas le destinataire.
+      const page = await getEvent(u, ev.id);
+      assert.deepEqual(page.myDraw, { state: "hidden" });
+      const mine = await revealMyReceiver(u, ev.id);
+      assert.notEqual(mine.id, u.id);
+      seen.add(mine.id);
       const view = await getEvent(u, ev.id);
-      assert.ok(view.myReceiver);
-      assert.notEqual(view.myReceiver.id, u.id);
-      seen.add(view.myReceiver.id);
+      assert.ok(view.myDraw.state === "seen" && view.myDraw.receiver.id === mine.id);
       // La réponse ne contient aucune autre attribution.
-      const json = JSON.stringify(view);
+      const json = JSON.stringify(view) + JSON.stringify(mine);
       assert.ok(!/assignments|giverId|receiverId/.test(json));
-      const others = f.all.filter((o) => o.id !== u.id && o.id !== view.myReceiver!.id);
+      const others = f.all.filter((o) => o.id !== u.id && o.id !== mine.id);
       // Aucun autre participant n'apparaît dans la réponse.
       for (const o of others) assert.ok(!json.includes(o.id), `${o.displayName} visible par ${u.displayName}`);
     }
@@ -79,10 +83,10 @@ describe("tirage", () => {
     const f = await family();
     const ev = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
     await runDraw(f.host, ev.id);
-    const before = (await getEvent(f.sam, ev.id)).myReceiver!.id;
+    const before = (await revealMyReceiver(f.sam, ev.id)).id;
     const relog = await login(f.sam.id, PASSWORD, freshIp());
     assert.ok(relog.ok);
-    if (relog.ok) assert.equal((await getEvent(relog.user, ev.id)).myReceiver!.id, before);
+    if (relog.ok) assert.equal((await revealMyReceiver(relog.user, ev.id)).id, before);
     await rejectsWith(runDraw(f.host, ev.id), "CONFLICT");
     // Deux clics simultanés : un seul tirage.
     await prisma.santaAssignment.deleteMany(); await prisma.santaEvent.update({ where: { id: ev.id }, data: { status: "OPEN" } });
@@ -96,8 +100,9 @@ describe("tirage", () => {
     const ev = await createEvent(f.host, { name: "Noël", giftDate: "2099-12-25", drawDate: "2099-12-01", budget: "", budgetKind: "MAX" }, f.all.map((u) => u.id));
     await rejectsWith(runDraw(f.host, ev.id), "CONFLICT", /pas encore arrivée/);
     const view = await getEvent(f.sam, ev.id);
-    assert.equal(view.myReceiver, null);
+    assert.deepEqual(view.myDraw, { state: "none" });
     assert.equal(view.status, "OPEN");
+    await rejectsWith(revealMyReceiver(f.sam, ev.id), "NOT_FOUND");
   });
 
   test("après le tirage : participants et exclusions verrouillés, l'événement ne peut plus être supprimé", async () => {
@@ -119,7 +124,10 @@ describe("tirage", () => {
     // Les données d'administration ne contiennent aucune attribution.
     assert.ok(admin1.participants.every((p) => !("receiver" in p) && !("receiverId" in p)));
     assert.equal(admin1.participants.find((p) => p.id === f.sam.id)!.viewed, false);
+    // Ouvrir la page ne suffit pas : « consulté » = animation de découverte lancée.
     await getEvent(f.sam, ev.id);
+    assert.equal((await getEventAdmin(f.host, ev.id)).participants.find((p) => p.id === f.sam.id)!.viewed, false);
+    await revealMyReceiver(f.sam, ev.id);
     assert.equal((await getEventAdmin(f.host, ev.id)).participants.find((p) => p.id === f.sam.id)!.viewed, true);
     assert.equal((await revealAssignments(f.host, ev.id)).length, 5);
   });
@@ -140,14 +148,14 @@ describe("visibilité et événements multiples", () => {
     const e2 = await createEvent(f.host, { name: "Anniversaire", ...base }, [f.tom.id, f.sam.id, f.julie.id]);
     await addExclusion(f.host, e2.id, f.tom.id, f.sam.id, false);
     await runDraw(f.host, e1.id);
-    assert.equal((await getEvent(f.tom, e2.id)).myReceiver, null, "le tirage de e1 n'affecte pas e2");
+    assert.deepEqual((await getEvent(f.tom, e2.id)).myDraw, { state: "none" }, "le tirage de e1 n'affecte pas e2");
     await runDraw(f.host, e2.id);
     assert.equal(await prisma.santaAssignment.count({ where: { eventId: e1.id } }), 5);
     assert.equal(await prisma.santaAssignment.count({ where: { eventId: e2.id } }), 3);
     assert.equal(await prisma.santaExclusion.count({ where: { eventId: e1.id } }), 0);
-    const r2 = await getEvent(f.tom, e2.id);
-    assert.notEqual(r2.myReceiver!.id, f.sam.id);
-    assert.ok([f.sam.id, f.julie.id].includes(r2.myReceiver!.id));
+    const r2 = await revealMyReceiver(f.tom, e2.id);
+    assert.notEqual(r2.id, f.sam.id);
+    assert.ok([f.sam.id, f.julie.id].includes(r2.id));
   });
 
   test("un événement passé reste consultable mais n'est plus modifiable", async () => {
@@ -157,7 +165,40 @@ describe("visibilité et événements multiples", () => {
     await prisma.santaEvent.update({ where: { id: ev.id }, data: { giftDate: "2025-12-25", drawDate: "2025-12-01" } });
     const view = await getEvent(f.sam, ev.id);
     assert.equal(view.past, true);
-    assert.ok(view.myReceiver);
+    assert.ok(await revealMyReceiver(f.sam, ev.id));
     await rejectsWith(updateEvent(f.host, ev.id, { name: "Modifié", giftDate: "2099-12-25", drawDate: "2025-12-01", budget: "", budgetKind: "MAX" }), "CONFLICT");
+  });
+});
+
+describe("révélation animée", () => {
+  test("rejouer l'animation renvoie toujours le même destinataire, sans nouveau tirage", async () => {
+    const f = await family();
+    const ev = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
+    await runDraw(f.host, ev.id);
+    const snapshot = await prisma.santaAssignment.findMany({ orderBy: { giverId: "asc" }, select: { giverId: true, receiverId: true } });
+    const first = await revealMyReceiver(f.tom, ev.id);
+    for (let i = 0; i < 10; i++) assert.equal((await revealMyReceiver(f.tom, ev.id)).id, first.id);
+    const after = await prisma.santaAssignment.findMany({ orderBy: { giverId: "asc" }, select: { giverId: true, receiverId: true } });
+    assert.deepEqual(after, snapshot);
+    assert.equal((await prisma.santaEvent.findUniqueOrThrow({ where: { id: ev.id } })).status, "DRAWN");
+  });
+
+  test("un non-participant, même l'Hôte, n'obtient aucun destinataire", async () => {
+    const f = await family();
+    const ev = await createEvent(f.host, { name: "Cousins", ...base }, [f.tom.id, f.sam.id, f.julie.id]);
+    await runDraw(f.host, ev.id);
+    await rejectsWith(revealMyReceiver(f.thomas, ev.id), "NOT_FOUND");
+    await rejectsWith(revealMyReceiver(f.host, ev.id), "NOT_FOUND");
+    await rejectsWith(revealMyReceiver(f.tom, "evenement-invente"), "NOT_FOUND");
+  });
+
+  test("le destinataire de chacun est bien celui du tirage enregistré", async () => {
+    const f = await family();
+    const ev = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
+    await runDraw(f.host, ev.id);
+    for (const u of f.all) {
+      const row = await prisma.santaAssignment.findUniqueOrThrow({ where: { eventId_giverId: { eventId: ev.id, giverId: u.id } } });
+      assert.equal((await revealMyReceiver(u, ev.id)).id, row.receiverId);
+    }
   });
 });

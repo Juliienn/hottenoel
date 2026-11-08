@@ -22,8 +22,8 @@ async function logout(page: Page) {
   await page.getByRole("button", { name: "Se déconnecter" }).click();
   await expect(page).toHaveURL(/\/connexion/);
 }
-async function shot(page: Page, name: string) {
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+async function shot(page: Page, name: string, fullPage = true) {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -171,7 +171,8 @@ test("réservation : visible par les autres, invisible pour le destinataire", as
   await logout(page);
 });
 
-test("Secret Santa : création, tirage, chacun ne voit que son destinataire", async ({ page }) => {
+test("Secret Santa : création, annonce, tirage, chacun ne voit que son destinataire", async ({ page }) => {
+  test.setTimeout(120_000); // inclut une animation de révélation complète
   await loginAs(page, HOST.login, HOST.password);
   await page.getByRole("link", { name: "Secret Santa" }).click();
   await page.getByLabel("Nom de l'événement").fill("Noël 2026");
@@ -179,14 +180,43 @@ test("Secret Santa : création, tirage, chacun ne voit que son destinataire", as
   await page.getByLabel("Date de remise des cadeaux").fill(parisDay(30));
   await page.getByLabel("Budget par cadeau (€)").fill("30");
   await page.getByRole("button", { name: "Créer l'événement" }).click();
-  await expect(page).toHaveURL(/\/secret-santa\/c/);
+  await expect(page).toHaveURL(/\/secret-santa\/c[^?]*\?annonce=1/);
   await expect(page.getByRole("heading", { name: "Noël 2026" })).toBeVisible();
+
+  // Proposition de prévenir les participants, aperçu modifiable, confirmation.
+  await expect(page.getByText("Ton événement Secret Santa a bien été créé ! Souhaites-tu prévenir les participants ?")).toBeVisible();
+  await page.getByRole("button", { name: "Envoyer un message aux participants" }).first().click();
+  const preview = page.getByLabel("Aperçu du message (modifiable)");
+  await expect(preview).toHaveValue(/🎁 Événement : Noël 2026/);
+  await expect(preview).toHaveValue(/💰 Budget : 30\s€ maximum/);
+  await expect(preview).toHaveValue(/Participants :\n• Julie\n• Julien\n• Sam\n• Tom/);
+  await expect(page.getByText(/Destinataires : uniquement les participants de cet événement — Julie, Sam, Tom/)).toBeVisible();
+  await preview.fill((await preview.inputValue()) + "\nPS : pas de chaussettes !");
+  await shot(page, "santa-annonce");
+  await page.getByRole("button", { name: "Envoyer aux 3 participants" }).click();
+  await page.getByRole("button", { name: "Confirmer l'envoi" }).click();
+  await expect(page.getByText("✅ Message publié sur le site : 3 participants le verront")).toBeVisible();
+  // Sans fournisseur SMS : liens vers l'app SMS pour ceux qui ont un numéro.
+  const smsLinks = page.getByRole("link", { name: "📱 Ouvrir l'app SMS" });
+  await expect(smsLinks).toHaveCount(2); // Sam et Tom ont un numéro, Julie non
+  expect(decodeURIComponent((await smsLinks.first().getAttribute("href"))!)).toContain("PS : pas de chaussettes !");
+  await expect(page).not.toHaveURL(/annonce=1/);
+
   await page.getByRole("button", { name: "Tirer au sort" }).click();
   await page.getByRole("button", { name: "Confirmer le tirage définitif" }).click();
+  await expect(page.getByText("Le tirage Secret Santa a bien été effectué ! 🎉 Souhaites-tu prévenir les participants ?")).toBeVisible();
   await expect(page.getByText("Tirage enregistré : il ne sera jamais relancé.")).toBeVisible();
   await expect(page.locator(".pill.done").first()).toBeVisible();
-  // Aucune attribution d'un autre n'est affichée sans demande explicite.
+  // L'Hôte participe : son destinataire n'est pas affiché tant qu'il ne l'a pas découvert.
+  await expect(page.getByRole("button", { name: "Découvrir mon Secret Santa" })).toBeVisible();
   await expect(page.getByText(/offre à/)).toHaveCount(0);
+  // Aperçu du message de tirage : aucun résultat dedans.
+  await page.getByRole("button", { name: "Envoyer un message aux participants" }).first().click();
+  const drawPreview = await page.getByLabel("Aperçu du message (modifiable)").inputValue();
+  expect(drawPreview).toContain("Le tirage au sort du Secret Santa Noël 2026 vient d'être effectué !");
+  expect(drawPreview).not.toMatch(/offre à|Julie|Sam|Tom/);
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByText("Le tirage Secret Santa a bien été effectué !")).toHaveCount(0);
   await shot(page, "santa-hote-desktop");
 
   // Tirage impossible : message explicatif.
@@ -197,6 +227,9 @@ test("Secret Santa : création, tirage, chacun ne voit que son destinataire", as
   await page.getByLabel("Julien (toi)").uncheck();
   await page.getByRole("button", { name: "Créer l'événement" }).click();
   await expect(page.getByRole("heading", { name: "Anniversaire" })).toBeVisible();
+  await page.getByRole("button", { name: "Plus tard" }).click();
+  await expect(page.getByText("Ton événement Secret Santa a bien été créé !")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/annonce=1/);
   const add = async (giver: string, receiver: string) => {
     await page.getByLabel(/^Personne/).selectOption({ label: giver });
     await page.getByLabel("ne doit pas offrir à").selectOption({ label: receiver });
@@ -210,21 +243,60 @@ test("Secret Santa : création, tirage, chacun ne voit que son destinataire", as
   await expect(page.getByText(/Tirage impossible : avec les exclusions actuelles, Sam ne peut offrir de cadeau à personne/)).toBeVisible();
   await logout(page);
 
+  // Sam : bandeau du message, puis découverte animée.
+  await fakeYouTube(page);
   await loginAs(page, "Sam", "mot-de-passe-de-sam");
-  await page.getByRole("link", { name: "Secret Santa" }).click();
-  await expect(page.locator(".event-card")).toHaveCount(2);
-  await page.locator(".event-card", { hasText: "Noël 2026" }).click();
-  await expect(page.getByText("Tu dois offrir un cadeau à :")).toBeVisible();
-  samReceiver = (await page.locator(".reveal .to").innerText()).trim();
-  expect(["Julien", "Julie", "Tom"]).toContain(samReceiver);
+  await page.getByRole("link", { name: /Nouveau message de l'Hôte : Noël 2026/ }).click();
+  await expect(page.getByText("PS : pas de chaussettes !")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Nouveau message de l'Hôte/ })).toHaveCount(0);
   await expect(page.getByText("Organisation")).toHaveCount(0);
   await expect(page.getByText("Afficher toutes les attributions")).toHaveCount(0);
+  // Le prénom n'est pas dans la page avant la découverte.
+  await expect(page.getByText("Tu dois offrir un cadeau à :")).toHaveCount(0);
+  await expect(page.locator(".reveal .to")).toHaveCount(0);
+
+  const started = Date.now();
+  await page.getByRole("button", { name: "Découvrir mon Secret Santa" }).click({ force: true }); // le bouton « respire »
+  const overlay = page.getByRole("dialog", { name: /Révélation du Secret Santa/ });
+  await expect(overlay.getByText("Ho Ho Ho...")).toBeVisible();
+  await expect(overlay.getByText("Quelqu'un attend un cadeau de ta part cette année...")).toBeVisible();
+  await expect(overlay.getByText("Es-tu prêt à découvrir ton destinataire ?")).toBeVisible({ timeout: 8000 });
+  await shot(page, "santa-revelation-suspense", false);
+  await expect(overlay.locator(".sr-name")).toBeVisible({ timeout: 15000 });
+  expect(Date.now() - started).toBeGreaterThan(7500); // le suspense dure vraiment
+  samReceiver = (await overlay.locator(".sr-name").getAttribute("aria-label"))!;
+  expect(["Julien", "Julie", "Tom"]).toContain(samReceiver);
+  await expect(overlay.getByText("🎉 TU DOIS OFFRIR UN CADEAU À... 🎉")).toBeVisible();
+  await expect(overlay.getByText(/garde le secret/)).toBeVisible();
+  // La musique a été lancée à la bonne position, avant le « drop ».
+  expect(await ytLog(page)).toContain("start:45");
+  await shot(page, "santa-revelation", false);
+
+  // Revoir : même destinataire, musique repositionnée, jamais de nouveau tirage.
+  await overlay.getByRole("button", { name: "Revoir l'animation" }).click();
+  await expect(overlay.locator(".sr-name")).toHaveCount(0);
+  await expect(overlay.getByText("Ho Ho Ho...")).toBeVisible();
+  expect(await ytLog(page)).toContain("seek:45");
+  await overlay.getByRole("button", { name: "Passer" }).click();
+  await expect(overlay.locator(".sr-name")).toHaveAttribute("aria-label", samReceiver);
+  await overlay.getByRole("button", { name: "Retourner à mon espace" }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect.poll(() => ytLog(page)).toContain("destroy");
+  await expect(page.locator(".reveal .to")).toHaveText(samReceiver);
+  await expect(page.getByRole("button", { name: "Revoir l'animation" })).toBeVisible();
   await shot(page, "santa-membre-desktop");
   const url = page.url();
   await logout(page);
   await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await page.goto(url);
   await expect(page.locator(".reveal .to")).toHaveText(samReceiver);
+  // Une requête forgée ne peut viser qu'un événement : le donneur est toujours Sam.
+  await logout(page);
+
+  // L'Hôte voit que Sam a découvert son tirage.
+  await loginAs(page, HOST.login, HOST.password);
+  await page.goto(url);
+  await expect(page.locator(".list-plain li", { hasText: "Sam" }).getByText("A découvert son tirage")).toBeVisible();
   await logout(page);
 });
 
@@ -282,7 +354,11 @@ async function fakeYouTube(page: Page) {
     body: `window.__yt = [];
       window.YT = { Player: function (el, opts) {
         var self = this, log = function (x) { window.__yt.push(x); };
+        log("start:" + ((opts.playerVars && opts.playerVars.start) || 0));
         self.setVolume = function (v) { log("volume:" + Math.round(v)); };
+        self.seekTo = function (t) { log("seek:" + Math.round(t)); };
+        self.mute = function () { log("mute"); };
+        self.unMute = function () { log("unmute"); };
         self.playVideo = function () { log("play"); setTimeout(function () { opts.events.onStateChange({ data: 1 }); }, 300); };
         self.pauseVideo = function () { log("pause"); };
         self.getCurrentTime = function () { return 1; };
@@ -407,6 +483,7 @@ test.describe("affichage smartphone", () => {
   });
 
   test("pages principales sans défilement horizontal", async ({ page }) => {
+    test.setTimeout(90_000);
     await page.goto("/connexion");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, "/connexion").toBeLessThanOrEqual(0);
@@ -421,5 +498,18 @@ test.describe("affichage smartphone", () => {
     await page.goto("/secret-santa");
     await page.locator(".event-card", { hasText: "Noël 2026" }).click();
     await shot(page, "mobile-santa-detail");
+    // Révélation sur smartphone (l'Hôte participe à « Noël 2026 »).
+    await page.getByRole("button", { name: "Découvrir mon Secret Santa" }).click({ force: true }); // le bouton « respire »
+    const overlay = page.getByRole("dialog", { name: /Révélation du Secret Santa/ });
+    await expect(overlay.getByText("Ho Ho Ho...")).toBeVisible();
+    await page.waitForTimeout(5500);
+    await shot(page, "mobile-revelation-cadeau", false);
+    await expect(overlay.locator(".sr-name")).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(2500);
+    await shot(page, "mobile-revelation", false);
+    const overflowReveal = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflowReveal).toBeLessThanOrEqual(0);
+    await overlay.getByRole("button", { name: "Retourner à mon espace" }).click();
+    await expect(page.locator(".reveal .to")).toBeVisible();
   });
 });

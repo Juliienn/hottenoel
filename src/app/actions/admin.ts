@@ -93,7 +93,8 @@ export async function createEventAction(_prev: ActionState, fd: FormData): Promi
     const ev = await createEvent(user, eventInput(fd), fd.getAll("participants").map(String));
     return { data: ev.id };
   });
-  if (state.ok) { revalidatePath("/", "layout"); redirect(`/secret-santa/${state.data}`); }
+  // ?annonce=1 : la page propose aussitôt de prévenir les participants.
+  if (state.ok) { revalidatePath("/", "layout"); redirect(`/secret-santa/${state.data}?annonce=1`); }
   return state;
 }
 
@@ -132,7 +133,11 @@ export async function removeExclusionAction(_prev: ActionState, fd: FormData): P
 
 export async function drawAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
-  return done(await run(async () => { await runDraw(user, str(fd, "id")); return "Tirage effectué ! Chaque participant découvre maintenant son destinataire."; }));
+  const id = str(fd, "id");
+  const state = await run(async () => { await runDraw(user, id); });
+  // ?tirage=1 : la page propose aussitôt d'annoncer le tirage aux participants.
+  if (state.ok) { revalidatePath("/", "layout"); redirect(`/secret-santa/${encodeURIComponent(id)}?tirage=1`); }
+  return state;
 }
 
 export async function revealAction(_prev: ActionState, fd: FormData): Promise<ActionState> {

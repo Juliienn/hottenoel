@@ -11,12 +11,21 @@ import { Avatar } from "@/components/Avatar";
 import { daysBetween, formatDayFr, parisDayKey } from "@/lib/parisTime";
 import { budgetLabel, EventFields, StatusPill } from "../EventFields";
 import { RevealAll } from "./RevealAll";
+import { RevealLauncher } from "./SantaReveal";
+import { NotifyPanel } from "./NotifyPanel";
+import { headers } from "next/headers";
+import { eventMessages, messageRecipients } from "@/lib/services/santaMessages";
+import { smsProviderLabel } from "@/lib/services/sms";
+import { announceMessage, drawMessage } from "@/lib/santaMessages";
 
 export const metadata = { title: "Secret Santa" };
 
-export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EventPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ annonce?: string; tirage?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const sp = await searchParams;
   let ev;
   try {
     ev = await getEvent(user, id);
@@ -27,6 +36,20 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   }
   const isHost = user.role === "HOST";
   const admin = isHost ? await getEventAdmin(user, id) : null;
+  // Accès à l'événement vérifié par getEvent ci-dessus (participant ou Hôte).
+  const messages = await eventMessages(user, id);
+  let notify = null;
+  if (admin) {
+    const h = await headers();
+    const siteUrl = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
+    const recipients = (await messageRecipients(user, id)).map(({ id: rid, displayName, phone }) => ({ id: rid, displayName, phone }));
+    const names = admin.participants.map((p) => p.displayName);
+    notify = {
+      recipients, provider: smsProviderLabel(),
+      annonce: announceMessage(ev, names, siteUrl),
+      tirage: ev.status === "DRAWN" ? drawMessage(ev, siteUrl) : null,
+    };
+  }
   const today = parisDayKey();
   const drawDue = daysBetween(today, ev.drawDate) <= 0;
   const open = ev.status === "OPEN" && !ev.past;
@@ -48,21 +71,52 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         </dl>
       </div>
 
+      {notify && sp.annonce && admin && admin.participants.length ? (
+        <NotifyPanel eventId={id} kind="ANNONCE" defaultText={notify.annonce} recipients={notify.recipients} provider={notify.provider} ask />
+      ) : null}
+      {notify?.tirage && sp.tirage ? (
+        <NotifyPanel eventId={id} kind="TIRAGE" defaultText={notify.tirage} recipients={notify.recipients} provider={notify.provider} ask />
+      ) : null}
+
       {ev.isParticipant ? (
-        ev.myReceiver ? (
+        ev.myDraw.state === "hidden" ? (
+          <div className="sr-teaser">
+            <p className="sr-teaser-t">Le tirage a eu lieu ! <span aria-hidden="true">🎄</span></p>
+            <p className="hint">Ton destinataire t&apos;attend dans ce paquet. Monte le son…</p>
+            <RevealLauncher eventId={id} eventName={ev.name} seen={false} />
+          </div>
+        ) : ev.myDraw.state === "seen" ? (
           <div className="reveal" role="status">
-            <Avatar avatar={ev.myReceiver.avatar} size={72} />
+            <Avatar avatar={ev.myDraw.receiver.avatar} size={72} />
             <div>
               <p>Tu dois offrir un cadeau à :</p>
-              <p className="to">{ev.myReceiver.displayName}</p>
+              <p className="to">{ev.myDraw.receiver.displayName}</p>
               <p className="hint" style={{ color: "inherit" }}>C&apos;est secret : garde-le pour toi !{" "}
-                <Link href={`/famille?membre=${ev.myReceiver.id}`} style={{ color: "inherit" }}>Voir sa liste de Noël</Link>
+                <Link href={`/famille?membre=${ev.myDraw.receiver.id}`} style={{ color: "inherit" }}>Voir sa liste de Noël</Link>
               </p>
             </div>
+            <div style={{ marginLeft: "auto" }}><RevealLauncher eventId={id} eventName={ev.name} seen /></div>
           </div>
-        ) : (
+        ) : ev.status === "DRAWN" ? null : (
           <div className="empty">Le tirage n&apos;a pas encore eu lieu. Reviens après le {formatDayFr(ev.drawDate)} pour découvrir à qui tu offres un cadeau.</div>
         )
+      ) : null}
+
+      {messages.length ? (
+        <div className="box">
+          <h2><span aria-hidden="true">📣</span> Messages de l&apos;Hôte</h2>
+          <ul className="santa-msgs">
+            {messages.map((m) => (
+              <li key={m.id} className={m.isNew ? "new" : undefined}>
+                <span className="hint">
+                  {m.kind === "TIRAGE" ? "Annonce du tirage" : "Annonce de l'événement"} · {m.createdAt.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "long" })}
+                  {m.isNew ? <span className="pill mine" style={{ marginLeft: 8 }}>Nouveau</span> : null}
+                </span>
+                <p>{m.text}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {admin ? (
@@ -82,6 +136,17 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
                 ))}
               </ul>
               <div style={{ marginTop: 12 }}><RevealAll eventId={id} hostParticipates={ev.isParticipant} /></div>
+            </div>
+          ) : null}
+
+          {notify && admin.participants.length ? (
+            <div className="box">
+              <h2>Prévenir les participants</h2>
+              <p className="hint">Le message est affiché sur le site aux seuls participants de cet événement{notify.provider ? `, et peut partir par SMS via ${notify.provider}` : ", et tu peux l'ouvrir dans ton application SMS"}.</p>
+              <div className="confirm-row" style={{ marginTop: 10 }}>
+                <NotifyPanel eventId={id} kind="ANNONCE" defaultText={notify.annonce} recipients={notify.recipients} provider={notify.provider} ask={false} label="Annoncer l'événement" />
+                {notify.tirage ? <NotifyPanel eventId={id} kind="TIRAGE" defaultText={notify.tirage} recipients={notify.recipients} provider={notify.provider} ask={false} label="Annoncer le tirage" /> : null}
+              </div>
             </div>
           ) : null}
 
