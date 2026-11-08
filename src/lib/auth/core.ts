@@ -66,35 +66,41 @@ export type LoginResult =
   | { ok: true; token: string; expiresAt: Date; user: SessionUser }
   | { ok: false; error: string };
 
-export const normalizeLogin = (s: string) => s.trim().toLowerCase();
+/** Identifiant technique (cuid) reçu du formulaire : on refuse tout le reste
+ * avant même d'interroger la base. */
+const PROFILE_ID_RE = /^[a-z0-9]{8,40}$/i;
 
-export async function login(rawLogin: string, password: string, ip: string): Promise<LoginResult> {
-  const loginKey = normalizeLogin(rawLogin).slice(0, 60);
-  if (!loginKey || !password) return { ok: false, error: "Indique ton identifiant et ton mot de passe." };
+/** Connexion à un profil choisi dans la grille : son id technique + son mot
+ * de passe. Cliquer sur un profil ne donne aucun accès : sans le bon mot de
+ * passe, vérifié ici côté serveur, aucune session n'est créée. */
+export async function login(profileId: string, password: string, ip: string): Promise<LoginResult> {
+  const key = profileId.trim();
+  if (!key || !PROFILE_ID_RE.test(key)) return { ok: false, error: "Choisis ton profil." };
+  if (!password) return { ok: false, error: "Indique ton mot de passe." };
 
   const since = new Date(Date.now() - LOGIN_WINDOW_MS);
-  const [failsLogin, failsIp] = await Promise.all([
-    prisma.loginAttempt.count({ where: { login: loginKey, success: false, createdAt: { gte: since } } }),
+  const [failsProfile, failsIp] = await Promise.all([
+    prisma.loginAttempt.count({ where: { login: key, success: false, createdAt: { gte: since } } }),
     prisma.loginAttempt.count({ where: { ip, success: false, createdAt: { gte: since } } }),
   ]);
-  if (failsLogin >= MAX_FAILS_PER_LOGIN || failsIp >= MAX_FAILS_PER_IP) {
+  if (failsProfile >= MAX_FAILS_PER_LOGIN || failsIp >= MAX_FAILS_PER_IP) {
     return { ok: false, error: "Trop de tentatives ratées. Réessaie dans 15 minutes, ou demande à l'Hôte de réinitialiser ton mot de passe." };
   }
 
-  const user = await prisma.user.findUnique({ where: { login: loginKey } });
+  const user = await prisma.user.findUnique({ where: { id: key } });
   // Toujours vérifier un hash, même sans compte : même durée de réponse.
   const ok = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
   const success = !!user && !!user.passwordHash && user.active && ok;
 
-  await prisma.loginAttempt.create({ data: { login: loginKey, ip, success } });
+  await prisma.loginAttempt.create({ data: { login: key, ip, success } });
   // Ménage : le journal ne sert que sur 15 minutes.
   await prisma.loginAttempt.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 86_400_000) } } });
 
   if (!success || !user) {
-    // Même message dans tous les cas : ne pas révéler si l'identifiant existe.
-    return { ok: false, error: "Identifiant ou mot de passe incorrect." };
+    // Même message pour un profil inconnu, désactivé ou un mauvais mot de passe.
+    return { ok: false, error: "Mot de passe incorrect." };
   }
-  await prisma.loginAttempt.deleteMany({ where: { login: loginKey, success: false } });
+  await prisma.loginAttempt.deleteMany({ where: { login: key, success: false } });
   const { token, expiresAt } = await createSession(user.id);
   return {
     ok: true, token, expiresAt,

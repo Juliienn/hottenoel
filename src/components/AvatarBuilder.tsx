@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AV, normalizeAvatar, type Avatar as AvatarValue, type AvatarKey } from "@/lib/avatar";
+import { AV, AV_PRESETS, normalizeAvatar, type Avatar as AvatarValue, type AvatarKey } from "@/lib/avatar";
 import { Avatar } from "./Avatar";
 
 /** Créateur d'avatar : sa valeur part avec le formulaire dans un champ caché. */
@@ -20,6 +20,15 @@ export function AvatarBuilder({ initial, name = "avatar", disabled = false }: { 
       <input type="hidden" name={name} value={JSON.stringify(value)} />
       <div className="avb-preview"><Avatar avatar={value} size={120} label="Aperçu de l'avatar" /></div>
       <div className="avb-opts">
+        <div className="avb-group"><span>Avatars proposés</span><div className="avb-row">
+          {AV_PRESETS.map((p) => (
+            <button key={p.label} type="button" className="hairopt" aria-label={`Avatar ${p.label}`} title={p.label}
+              aria-pressed={(Object.keys(p.avatar) as AvatarKey[]).every((k) => p.avatar[k] === value[k])}
+              disabled={disabled} onClick={() => setValue(p.avatar)}>
+              <Avatar avatar={p.avatar} size={46} />
+            </button>
+          ))}
+        </div></div>
         <div className="avb-group"><span>Sexe</span><div className="avb-row">
           {AV.sex.map(([k, l]) => (
             <button key={k} type="button" className="chip" aria-pressed={value.sex === k} disabled={disabled} onClick={() => set("sex", k)}>{l}</button>

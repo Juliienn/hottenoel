@@ -9,36 +9,42 @@ import { createMember, deleteMember, resetMemberPassword, setMemberActive, updat
 import {
   addExclusion, createEvent, deleteEvent, removeExclusion, revealAssignments, runDraw, setParticipants, updateEvent,
 } from "@/lib/services/santa";
-import { run, str, type ActionState } from "./run";
+import { resetSmsTemplate, saveSmsTemplate, sendMemberSms } from "@/lib/services/sms";
+import { parseJson, run, str, type ActionState } from "./run";
 
 const done = <T extends ActionState>(s: T) => { if (s.ok) revalidatePath("/", "layout"); return s; };
 
 // ---------- Membres ----------
 
+export type Creds = { id: string; displayName: string; phone: string | null; password: string };
+
 export async function createMemberAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
-  const password = str(fd, "password");
   return done(await run(async () => {
-    const m = await createMember(user, { displayName: str(fd, "displayName"), login: str(fd, "login"), password });
-    // Renvoyé une seule fois, à l'Hôte qui vient de le saisir, pour préparer le SMS.
-    return { message: `Profil de ${m.displayName} créé.`, data: { displayName: m.displayName, login: m.login, password } };
+    const m = await createMember(user, {
+      displayName: str(fd, "displayName"), password: str(fd, "password"), phone: str(fd, "phone"), avatar: parseJson(str(fd, "avatar")),
+    });
+    // Mot de passe renvoyé une seule fois, à l'Hôte, pour préparer le SMS.
+    const data: Creds = { id: m.id, displayName: m.displayName, phone: m.phone, password: m.password };
+    return { message: `Profil de ${m.displayName} créé.`, data };
   }));
 }
 
 export async function updateMemberAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
+  const avatar = str(fd, "avatar");
   return done(await run(async () => {
-    await updateMember(user, str(fd, "id"), { displayName: str(fd, "displayName"), login: str(fd, "login") });
+    await updateMember(user, str(fd, "id"), { displayName: str(fd, "displayName"), phone: str(fd, "phone"), avatar: avatar ? parseJson(avatar) : undefined });
     return "Profil mis à jour.";
   }));
 }
 
 export async function resetPasswordAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
-  const password = str(fd, "password");
   return done(await run(async () => {
-    await resetMemberPassword(user, str(fd, "id"), password);
-    return { message: "Mot de passe réinitialisé. Le membre devra en choisir un nouveau à sa prochaine connexion.", data: { login: str(fd, "login"), password, displayName: str(fd, "displayName") } };
+    const r = await resetMemberPassword(user, str(fd, "id"), str(fd, "password"));
+    const data: Creds = r;
+    return { message: `Nouveau mot de passe provisoire pour ${r.displayName}. L'ancien ne fonctionne plus ; il devra en choisir un à sa prochaine connexion.`, data };
   }));
 }
 
@@ -54,6 +60,25 @@ export async function setActiveAction(_prev: ActionState, fd: FormData): Promise
 export async function deleteMemberAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser();
   return done(await run(async () => { await deleteMember(user, str(fd, "id")); return "Profil supprimé."; }));
+}
+
+// ---------- SMS ----------
+
+export async function sendSmsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  return run(async () => {
+    const r = await sendMemberSms(user, str(fd, "id"), str(fd, "text"));
+    return { message: `SMS accepté par ${r.provider} pour envoi${r.reference ? ` (réf. ${r.reference})` : ""}.`, data: r };
+  });
+}
+
+export async function saveSmsTemplateAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const user = await requireUser();
+  return done(await run(async () => {
+    if (str(fd, "reset") === "1") { await resetSmsTemplate(user); return "Modèle par défaut rétabli."; }
+    await saveSmsTemplate(user, str(fd, "template"));
+    return "Modèle de SMS enregistré.";
+  }));
 }
 
 // ---------- Secret Santa ----------

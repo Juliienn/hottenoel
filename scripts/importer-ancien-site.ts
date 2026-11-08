@@ -1,9 +1,9 @@
 // Reprend les profils et listes de la première version du site (page
 // claude.ai), exportés dans scripts/donnees/ancien-site.json.
-// Les profils arrivent SANS identifiant ni mot de passe : l'Hôte les active
-// depuis l'Espace Hôte (« Gérer ce profil »), ce qui lui laisse le contrôle
-// de qui peut se connecter. Rejouable sans risque : un profil déjà importé
-// (même prénom, sans identifiant) n'est pas recréé.
+// Les profils arrivent SANS mot de passe (absents de l'écran de connexion) :
+// l'Hôte les active depuis l'Espace Hôte (« Gérer ce profil » → « Activer le
+// profil »), ce qui lui laisse le contrôle de qui peut se connecter.
+// Rejouable sans risque : un profil du même prénom n'est pas recréé.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
@@ -16,7 +16,7 @@ async function main() {
   const file = process.argv[2] ?? join(__dirname, "donnees", "ancien-site.json");
   const data = JSON.parse(readFileSync(file, "utf8")) as { members: OldMember[] };
   for (const m of data.members) {
-    const exists = await prisma.user.findFirst({ where: { displayName: m.name, login: null } });
+    const exists = await prisma.user.findFirst({ where: { displayName: { equals: m.name, mode: "insensitive" } } });
     if (exists) { console.log(`Déjà importé : ${m.name}`); continue; }
     const user = await prisma.user.create({
       data: {

@@ -97,3 +97,18 @@ export function avatarSvg(raw: unknown): string {
     + `<path d="M44 66 Q50 71.5 56 66" fill="none" stroke="${a.sex === "f" ? "#a8424f" : O}" stroke-width="2" stroke-linecap="round"/>`
     + `</svg>`;
 }
+
+/** Avatars proposés d'un clic (création de profil, Mon compte), que l'on
+ * peut ensuite retoucher dans le créateur. */
+export const AV_PRESETS: Array<{ label: string; avatar: Avatar }> = [
+  { label: "Mamie", avatar: { sex: "f", hair: "chignon", skin: "claire", hairColor: "blanc", eyes: "bleu", sweater: "bordeaux" } },
+  { label: "Papy", avatar: { sex: "h", hair: "chauve", skin: "claire", hairColor: "gris", eyes: "marron", sweater: "vert" } },
+  { label: "Maman", avatar: { sex: "f", hair: "long", skin: "mate", hairColor: "brun", eyes: "noisette", sweater: "rouge" } },
+  { label: "Papa", avatar: { sex: "h", hair: "raie", skin: "halee", hairColor: "noir", eyes: "marron", sweater: "bleu" } },
+  { label: "Fille", avatar: { sex: "f", hair: "queue", skin: "tres-claire", hairColor: "roux", eyes: "vert", sweater: "rose" } },
+  { label: "Garçon", avatar: { sex: "h", hair: "herisse", skin: "claire", hairColor: "blond", eyes: "bleu", sweater: "moutarde" } },
+  { label: "Tata", avatar: { sex: "f", hair: "boucles", skin: "brune", hairColor: "noir", eyes: "marron", sweater: "vert" } },
+  { label: "Tonton", avatar: { sex: "h", hair: "court", skin: "foncee", hairColor: "noir", eyes: "noir", sweater: "gris" } },
+  { label: "Cousine", avatar: { sex: "f", hair: "carre", skin: "claire", hairColor: "chatain", eyes: "gris", sweater: "blanc" } },
+  { label: "Cousin", avatar: { sex: "h", hair: "boucles", skin: "mate", hairColor: "chatain", eyes: "vert", sweater: "rouge" } },
+];

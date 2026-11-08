@@ -1,17 +1,19 @@
 // Alternative à la page /installation, pour qui a accès au serveur :
-//   npm run creer-hote -- "Prénom" identifiant "mot de passe"
+//   npm run creer-hote -- "Prénom" "mot de passe"
 // Mêmes règles : impossible s'il existe déjà un Hôte.
 import { prisma } from "../src/lib/prisma";
 import { hashPassword } from "../src/lib/password";
-import { checkPassword, cleanDisplayName, cleanLogin, hostExists } from "../src/lib/services/account";
+import { assertNameFree, checkPassword, cleanDisplayName, hostExists } from "../src/lib/services/account";
 
 async function main() {
-  const [name, login, password] = process.argv.slice(2);
-  if (!name || !login || !password) throw new Error('Usage : npm run creer-hote -- "Prénom" identifiant "mot de passe"');
+  const [name, password] = process.argv.slice(2);
+  if (!name || !password) throw new Error('Usage : npm run creer-hote -- "Prénom" "mot de passe"');
   if (await hostExists()) throw new Error("Un compte Hôte existe déjà.");
   checkPassword(password);
+  const displayName = cleanDisplayName(name);
+  await assertNameFree(displayName);
   await prisma.user.create({
-    data: { displayName: cleanDisplayName(name), login: cleanLogin(login), role: "HOST", passwordHash: await hashPassword(password), mustChangePassword: false },
+    data: { displayName, role: "HOST", passwordHash: await hashPassword(password), mustChangePassword: false },
   });
   console.log("Compte Hôte créé.");
 }

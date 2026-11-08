@@ -15,10 +15,10 @@ const PendingContext = createContext(false);
  * incorrect », l'identifiant et le prénom étaient effacés). Ici les champs
  * ne sont vidés que sur succès, et seulement si resetOnSuccess. */
 export function ActionForm({
-  action, children, className, resetOnSuccess = false, showStatus = true, onSuccess,
+  action, children, className, resetOnSuccess = false, showStatus = true, onSuccess, onError,
 }: {
   action: Action; children: ReactNode; className?: string; resetOnSuccess?: boolean; showStatus?: boolean;
-  onSuccess?: (state: ActionState) => void;
+  onSuccess?: (state: ActionState) => void; onError?: (state: ActionState) => void;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const ref = useRef<HTMLFormElement>(null);
@@ -26,6 +26,7 @@ export function ActionForm({
     if (!state.key) return;
     if (state.ok && resetOnSuccess) ref.current?.reset();
     if (state.ok) onSuccess?.(state);
+    else onError?.(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.key]);
   return (
@@ -35,7 +36,8 @@ export function ActionForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (pending) return;
-        const fd = new FormData(e.currentTarget);
+        // Le bouton cliqué (name/value) fait partie des données envoyées.
+        const fd = new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter);
         startTransition(() => formAction(fd));
       }}
     >

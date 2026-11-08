@@ -4,9 +4,10 @@
 import { after, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { freshIp, makeUser, PASSWORD, prisma, resetDb } from "./helpers/db";
+import { hashPassword } from "../src/lib/password";
 import { deleteSession, login, validateSessionToken, MAX_FAILS_PER_LOGIN } from "../src/lib/auth/core";
 import { AppError } from "../src/lib/services/errors";
-import { changeMyPassword, setupHost, updateMyProfile } from "../src/lib/services/account";
+import { changeMyPassword, listLoginProfiles, setupHost, updateMyProfile } from "../src/lib/services/account";
 import { createMember, deleteMember, listMembers, resetMemberPassword, setMemberActive, updateMember } from "../src/lib/services/members";
 import { addItem, claimItem, deleteItem, familyMembers, memberList, myGifts, myItems, unclaimItem } from "../src/lib/services/wishlist";
 import { createEvent, getEventAdmin, revealAssignments, runDraw } from "../src/lib/services/santa";
@@ -21,15 +22,15 @@ after(() => prisma.$disconnect());
 describe("compte Hôte", () => {
   test("ne s'obtient qu'avec le jeton d'installation, et une seule fois", async () => {
     process.env.SETUP_TOKEN = "jeton-de-test-tres-long-123";
-    await rejectsWith(setupHost("mauvais-jeton", { displayName: "Pirate", login: "pirate", password: PASSWORD }), "FORBIDDEN");
-    await setupHost("jeton-de-test-tres-long-123", { displayName: "Julien", login: "julien", password: PASSWORD });
-    await rejectsWith(setupHost("jeton-de-test-tres-long-123", { displayName: "Autre", login: "autre", password: PASSWORD }), "CONFLICT");
+    await rejectsWith(setupHost("mauvais-jeton", { displayName: "Pirate", password: PASSWORD }), "FORBIDDEN");
+    await setupHost("jeton-de-test-tres-long-123", { displayName: "Julien", password: PASSWORD });
+    await rejectsWith(setupHost("jeton-de-test-tres-long-123", { displayName: "Autre", password: PASSWORD }), "CONFLICT");
     assert.equal(await prisma.user.count({ where: { role: "HOST" } }), 1);
   });
 
   test("installation fermée si SETUP_TOKEN est absent ou trop court", async () => {
     process.env.SETUP_TOKEN = "court";
-    await rejectsWith(setupHost("court", { displayName: "X", login: "xxx", password: PASSWORD }), "FORBIDDEN");
+    await rejectsWith(setupHost("court", { displayName: "X", password: PASSWORD }), "FORBIDDEN");
   });
 
   test("la base refuse un second Hôte même en écriture directe", async () => {
@@ -46,26 +47,57 @@ describe("connexion et sessions", () => {
     assert.equal(await validateSessionToken(m.token), null);
   });
 
-  test("mauvais mot de passe et identifiant inconnu donnent le même message", async () => {
-    await makeUser("Sam");
-    const a = await login("sam", "faux-mot-de-passe", freshIp());
-    const b = await login("inconnu", "faux-mot-de-passe", freshIp());
+  test("mauvais mot de passe et profil inconnu donnent le même message", async () => {
+    const sam = await makeUser("Sam");
+    const a = await login(sam.id, "faux-mot-de-passe", freshIp());
+    const b = await login("cinconnu0000000000000000", "faux-mot-de-passe", freshIp());
     assert.ok(!a.ok && !b.ok);
     assert.equal(!a.ok && a.error, !b.ok && b.error);
+    assert.equal(!a.ok && a.error, "Mot de passe incorrect.");
+  });
+
+  test("choisir un profil sans son mot de passe ne connecte pas", async () => {
+    const sam = await makeUser("Sam");
+    const r = await login(sam.id, "", freshIp());
+    assert.equal(r.ok, false);
+    assert.equal(await prisma.session.count({ where: { userId: sam.id } }), 1); // celle de makeUser seulement
+  });
+
+  test("un bon mot de passe ouvre le bon profil, et pas un autre", async () => {
+    const sam = await makeUser("Sam");
+    const julie = await makeUser("Julie");
+    // Le mot de passe est commun dans ces tests : on vérifie que la session
+    // créée est bien celle du profil choisi.
+    const r = await login(julie.id, PASSWORD, freshIp());
+    assert.ok(r.ok);
+    if (r.ok) assert.equal((await validateSessionToken(r.token))?.id, julie.id);
+    assert.notEqual(sam.id, julie.id);
+  });
+
+  test("un id de profil mal formé est refusé sans interroger le compte", async () => {
+    const r = await login("' OR 1=1 --", PASSWORD, freshIp());
+    assert.ok(!r.ok);
+  });
+
+  test("ancien compte avec identifiant : il se connecte toujours, par son profil", async () => {
+    const u = await prisma.user.create({ data: { displayName: "Ancien", login: "ancien.login", passwordHash: await hashPassword(PASSWORD), mustChangePassword: false } });
+    const r = await login(u.id, PASSWORD, freshIp());
+    assert.ok(r.ok);
+    assert.ok((await listLoginProfiles()).some((p) => p.id === u.id));
   });
 
   test("blocage après trop d'essais ratés, même avec le bon mot de passe ensuite", async () => {
-    await makeUser("Sam");
-    for (let i = 0; i < MAX_FAILS_PER_LOGIN; i++) await login("sam", "faux", freshIp());
-    const r = await login("sam", PASSWORD, freshIp());
+    const sam = await makeUser("Sam");
+    for (let i = 0; i < MAX_FAILS_PER_LOGIN; i++) await login(sam.id, "faux", freshIp());
+    const r = await login(sam.id, PASSWORD, freshIp());
     assert.ok(!r.ok && /Trop de tentatives/.test(r.error));
   });
 
   test("blocage par adresse IP qui essaie plusieurs comptes", async () => {
-    await makeUser("Sam");
+    const sam = await makeUser("Sam");
     const ip = freshIp();
-    for (let i = 0; i < 20; i++) await login(`compte${i}`, "faux", ip);
-    const r = await login("sam", PASSWORD, ip);
+    for (let i = 0; i < 20; i++) await login(`compte0000000${i}`, "faux", ip);
+    const r = await login(sam.id, PASSWORD, ip);
     assert.ok(!r.ok && /Trop de tentatives/.test(r.error));
   });
 
@@ -80,7 +112,8 @@ describe("connexion et sessions", () => {
     const m = await makeUser("Sam");
     await setMemberActive(host, m.id, false);
     assert.equal(await validateSessionToken(m.token), null);
-    assert.equal((await login("sam", PASSWORD, freshIp())).ok, false);
+    assert.equal((await login(m.id, PASSWORD, freshIp())).ok, false);
+    assert.ok(!(await listLoginProfiles()).some((p) => p.id === m.id));
   });
 
   test("réinitialisation par l'Hôte : ancien mot de passe et sessions invalidés, changement imposé", async () => {
@@ -88,8 +121,8 @@ describe("connexion et sessions", () => {
     const m = await makeUser("Sam");
     await resetMemberPassword(host, m.id, "provisoire-123");
     assert.equal(await validateSessionToken(m.token), null);
-    assert.equal((await login("sam", PASSWORD, freshIp())).ok, false);
-    const r = await login("sam", "provisoire-123", freshIp());
+    assert.equal((await login(m.id, PASSWORD, freshIp())).ok, false);
+    const r = await login(m.id, "provisoire-123", freshIp());
     assert.ok(r.ok && r.user.mustChangePassword);
     // Tant que le mot de passe n'est pas changé, aucun service n'est accessible.
     if (r.ok) {
@@ -107,15 +140,15 @@ describe("droits d'administration vérifiés côté serveur", () => {
     const host = await makeUser("Hote", "HOST");
     const m = await makeUser("Sam");
     const other = await makeUser("Julie");
-    await rejectsWith(createMember(m, { displayName: "Faux", login: "faux", password: PASSWORD }), "FORBIDDEN");
+    await rejectsWith(createMember(m, { displayName: "Faux", password: PASSWORD }), "FORBIDDEN");
     await rejectsWith(listMembers(m), "FORBIDDEN");
-    await rejectsWith(updateMember(m, other.id, { displayName: "X", login: "julie" }), "FORBIDDEN");
+    await rejectsWith(updateMember(m, other.id, { displayName: "X", phone: "0611223344" }), "FORBIDDEN");
     await rejectsWith(resetMemberPassword(m, other.id, "pirate-1234"), "FORBIDDEN");
     await rejectsWith(setMemberActive(m, other.id, false), "FORBIDDEN");
     await rejectsWith(deleteMember(m, other.id), "FORBIDDEN");
     assert.equal(await prisma.user.count(), 3);
     // L'Hôte, lui, peut.
-    const created = await createMember(host, { displayName: "Mamie", login: "mamie", password: PASSWORD });
+    const created = await createMember(host, { displayName: "Mamie", password: PASSWORD });
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: created.id } })).role, "MEMBER");
   });
 
@@ -124,7 +157,7 @@ describe("droits d'administration vérifiés côté serveur", () => {
     await updateMyProfile(m, { displayName: "Sam", about: "", avatar: null, role: "HOST", login: "admin" } as never);
     const u = await prisma.user.findUniqueOrThrow({ where: { id: m.id } });
     assert.equal(u.role, "MEMBER");
-    assert.equal(u.login, "sam");
+    assert.equal(u.login, null);
   });
 
   test("un membre ne peut ni créer, ni tirer, ni voir l'administration d'un Secret Santa", async () => {

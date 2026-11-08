@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from "node:crypto";
+import { randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from "node:crypto";
 
 // scrypt (inclus dans Node, aucune dépendance native à compiler sur Vercel).
 // N = 2^15 : ~100 ms par essai sur un serveur, assez lent pour décourager
@@ -45,4 +45,21 @@ export function passwordProblem(pw: string): string | null {
   if (pw.length < PASSWORD_MIN_LENGTH) return `Le mot de passe doit faire au moins ${PASSWORD_MIN_LENGTH} caractères.`;
   if (pw.length > 200) return "Le mot de passe est trop long.";
   return null;
+}
+
+// Mot de passe provisoire généré côté serveur, facile à taper depuis un SMS :
+// trois mots de Noël et un nombre (« sapin-givre-lutin-42 »). 40 mots → 40³ × 90
+// ≈ 5,8 millions de possibilités (≈ 22 bits) : avec la limite de 5 essais par
+// quart d'heure et par profil, plus de 1 000 ans en moyenne pour le deviner,
+// et il ne sert que jusqu'à la première connexion.
+const WORDS = [
+  "sapin", "renne", "flocon", "etoile", "houx", "lutin", "biche", "neige", "boule", "cadeau",
+  "bougie", "givre", "traineau", "hotte", "guirlande", "cannelle", "clochette", "chocolat", "marron", "buche",
+  "noisette", "pain-epice", "mitaine", "bonnet", "echarpe", "chalet", "sucre", "orange", "lanterne", "ruban",
+  "papillote", "gui", "pomme", "luge", "igloo", "ours", "hibou", "vanille", "noel", "cheminee",
+];
+
+export function generateTempPassword(): string {
+  const w = () => WORDS[randomInt(WORDS.length)];
+  return `${w()}-${w()}-${w()}-${randomInt(10, 100)}`;
 }

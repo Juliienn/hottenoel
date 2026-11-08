@@ -80,7 +80,7 @@ describe("tirage", () => {
     const ev = await createEvent(f.host, { name: "Noël", ...base }, f.all.map((u) => u.id));
     await runDraw(f.host, ev.id);
     const before = (await getEvent(f.sam, ev.id)).myReceiver!.id;
-    const relog = await login("sam", PASSWORD, freshIp());
+    const relog = await login(f.sam.id, PASSWORD, freshIp());
     assert.ok(relog.ok);
     if (relog.ok) assert.equal((await getEvent(relog.user, ev.id)).myReceiver!.id, before);
     await rejectsWith(runDraw(f.host, ev.id), "CONFLICT");

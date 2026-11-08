@@ -56,9 +56,9 @@ function Reindeer({ x, y }: { x: number; y: number }) {
 }
 
 /** Traîneau tiré par deux rennes, qui flotte doucement dans le ciel de l'en-tête. */
-export function SkySleigh() {
+export function SkySleigh({ className = "sky-sleigh" }: { className?: string }) {
   return (
-    <svg className="sky-sleigh" viewBox="-4 -6 200 50" aria-hidden="true">
+    <svg className={className} viewBox="-4 -6 200 50" aria-hidden="true">
       <path d="M44 24 L96 20 M44 26 L150 18" fill="none" stroke="currentColor" strokeWidth="1" opacity=".7" />
       <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 12 L8 26 Q9 30 14 30 L38 30 Q44 30 44 22 L44 16" fill="var(--berry)" fillOpacity=".85" />
@@ -86,11 +86,11 @@ function Gift({ x, y, w, h, color, ribbon }: { x: number; y: number; w: number; 
 }
 
 /** Scène de pied de page : colline enneigée, sapins, cadeaux et étoiles. */
-export function FooterScene() {
+export function FooterScene({ className = "footer-scene" }: { className?: string }) {
   const trees: Array<[number, number]> = [[40, .8], [120, 1.1], [520, 1.35], [600, .95], [990, 1.05], [1080, .75], [1150, .9]];
   const stars: Array<[number, number, number]> = [[200, 30, .7], [330, 18, .5], [420, 44, .6], [760, 22, .8], [880, 40, .5], [1010, 16, .6], [700, 52, .4]];
   return (
-    <div className="footer-scene" aria-hidden="true">
+    <div className={className} aria-hidden="true">
       <svg viewBox="0 0 1200 150" preserveAspectRatio="xMidYMax slice">
         {stars.map(([x, y, s], i) => <path key={i} d={STAR} transform={`translate(${x} ${y}) scale(${s})`} fill="var(--gold)" opacity=".8" />)}
         <path d="M0 128 Q200 102 420 118 Q640 134 860 112 Q1040 96 1200 116 L1200 150 L0 150 Z" fill="var(--paper)" stroke="var(--line)" strokeWidth="1.5" />

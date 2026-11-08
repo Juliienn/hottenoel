@@ -20,10 +20,19 @@ enum Role {
 
 model User {
   id                 String   @id @default(cuid())
-  /// Identifiant de connexion, toujours en minuscules. Null = profil importé
-  /// de l'ancien site, pas encore activé par l'Hôte.
+  /// `id` est l'identifiant technique unique : toutes les relations et la
+  /// connexion (choix du profil + mot de passe) passent par lui.
+  ///
+  /// Ancien identifiant de connexion saisi au clavier. Plus utilisé depuis
+  /// la sélection de profils : conservé (nullable) pour ne perdre aucune
+  /// donnée des comptes existants. Les nouveaux profils l'ont à null.
   login              String?  @unique
+  /// Prénom affiché, seul nom visible du profil (unique, sans tenir compte
+  /// des majuscules : vérifié dans src/lib/services/account.ts).
   displayName        String
+  /// Portable au format international (+33612345678). Visible du seul Hôte,
+  /// pour lui envoyer ses accès par SMS.
+  phone              String?
   role               Role     @default(MEMBER)
   /// scrypt, format "scrypt$N$r$p$sel$hash". Jamais renvoyé au navigateur.
   passwordHash       String?
@@ -61,6 +70,7 @@ model Session {
 /// Journal des tentatives de connexion, pour bloquer les essais répétés.
 model LoginAttempt {
   id        String   @id @default(cuid())
+  /// Clé du profil visé : son id technique (anciennement l'identifiant saisi).
   login     String
   ip        String
   success   Boolean
@@ -168,4 +178,12 @@ model SantaAssignment {
 
   @@id([eventId, giverId])
   @@unique([eventId, receiverId])
+}
+
+/// Réglages du site modifiables par l'Hôte (clé → valeur), par exemple le
+/// modèle du SMS d'accès. Jamais de mot de passe ici.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

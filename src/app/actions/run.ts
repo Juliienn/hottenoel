@@ -22,3 +22,7 @@ export const str = (fd: FormData, k: string) => {
   const v = fd.get(k);
   return typeof v === "string" ? v : "";
 };
+
+export const parseJson = (s: string): unknown => {
+  try { return JSON.parse(s); } catch { return null; }
+};

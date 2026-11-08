@@ -15,7 +15,7 @@ export default async function AccountPage() {
     <div className="panel">
       <div className="box">
         <h2>Mon profil</h2>
-        <p className="hint">Ton identifiant de connexion : <b>{me.login}</b>. Seul l&apos;Hôte peut le changer.</p>
+        <p className="hint">Ton prénom et ton avatar forment ta vignette dans l&apos;écran de connexion.</p>
         <ActionForm action={updateProfileAction} className="grid">
           <label className="f-full">Prénom ou surnom
             <input name="displayName" maxLength={40} required defaultValue={me.displayName} />

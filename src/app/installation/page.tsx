@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { hostExists, LOGIN_RULES } from "@/lib/services/account";
+import { hostExists } from "@/lib/services/account";
 import { setupAction } from "@/app/actions/auth";
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { PASSWORD_MIN_LENGTH } from "@/lib/password";
@@ -26,10 +26,7 @@ export default async function SetupPage() {
         </label>
         <label className="f-full">Ton prénom
           <input name="displayName" required maxLength={40} />
-        </label>
-        <label className="f-full">Identifiant de connexion
-          <input name="login" required autoCapitalize="none" spellCheck={false} maxLength={30} />
-          <span className="hint">{LOGIN_RULES}</span>
+          <span className="hint">Il s&apos;affichera sur ta vignette dans l&apos;écran de connexion.</span>
         </label>
         <label className="f-full">Mot de passe
           <input name="password" type="password" required minLength={PASSWORD_MIN_LENGTH} autoComplete="new-password" />

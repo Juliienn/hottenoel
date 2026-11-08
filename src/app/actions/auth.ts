@@ -4,11 +4,12 @@ import { redirect } from "next/navigation";
 import { deleteSession, login } from "@/lib/auth/core";
 import { clearSessionCookie, clientIp, getSessionToken, requireUser, safeNext, setSessionCookie } from "@/lib/auth/next";
 import { changeMyPassword, setupHost } from "@/lib/services/account";
-import { run, str, type ActionState } from "./run";
+import { parseJson, run, str, type ActionState } from "./run";
 import { revalidatePath } from "next/cache";
 
 export async function loginAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  const result = await login(str(fd, "login"), str(fd, "password"), await clientIp());
+  // Le profil est désigné par son id technique (champ caché de la vignette).
+  const result = await login(str(fd, "profileId"), str(fd, "password"), await clientIp());
   if (!result.ok) return { ok: false, error: result.error, key: Date.now() };
   await setSessionCookie(result.token, result.expiresAt);
   redirect(result.user.mustChangePassword ? "/compte/mot-de-passe" : safeNext(str(fd, "suivant")));
@@ -22,7 +23,7 @@ export async function logoutAction(): Promise<void> {
 
 export async function setupAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const state = await run(async () => {
-    await setupHost(str(fd, "token"), { displayName: str(fd, "displayName"), login: str(fd, "login"), password: str(fd, "password") });
+    await setupHost(str(fd, "token"), { displayName: str(fd, "displayName"), password: str(fd, "password"), avatar: parseJson(str(fd, "avatar")) });
   });
   if (state.ok) redirect("/connexion?installe=1");
   return state;

@@ -10,7 +10,7 @@ function prepare() {
   execSync("npx prisma migrate deploy", { env, stdio: "inherit" });
   execSync(`npx prisma db execute --url "${url}" --stdin`, {
     env,
-    input: `TRUNCATE "SantaAssignment","SantaExclusion","SantaParticipant","SantaEvent","Claim","WishItem","Session","LoginAttempt","User" CASCADE;`,
+    input: `TRUNCATE "SantaAssignment","SantaExclusion","SantaParticipant","SantaEvent","Claim","WishItem","Session","LoginAttempt","Setting","User" CASCADE;`,
     stdio: ["pipe", "inherit", "inherit"],
   });
 }

@@ -2,79 +2,133 @@
 
 import { useState } from "react";
 import type { ActionState } from "@/app/actions/run";
-import { createMemberAction, deleteMemberAction, resetPasswordAction, setActiveAction, updateMemberAction } from "@/app/actions/admin";
+import {
+  createMemberAction, deleteMemberAction, resetPasswordAction, saveSmsTemplateAction, setActiveAction, updateMemberAction, type Creds,
+} from "@/app/actions/admin";
 import { ActionForm, ConfirmSubmit, SubmitButton } from "@/components/ActionForm";
-import { SmsCard } from "./SmsCard";
+import { Avatar } from "@/components/Avatar";
+import { AvatarBuilder } from "@/components/AvatarBuilder";
+import { formatPhone } from "@/lib/phone";
+import { DEFAULT_SMS_TEMPLATE, SMS_TEMPLATE_MAX } from "@/lib/smsTemplate";
+import { PhoneIcon, SmsComposer } from "./SmsComposer";
 
-type Creds = { displayName: string; login: string; password: string };
+type SmsContext = { siteUrl: string; template: string; provider: string | null };
 
-/** Propose un mot de passe provisoire lisible (sans caractères ambigus). */
-function suggestPassword(): string {
-  const words = ["sapin", "renne", "flocon", "etoile", "houx", "lutin", "biche", "neige", "boule", "cadeau", "bougie", "givre"];
-  const pick = () => words[crypto.getRandomValues(new Uint32Array(1))[0] % words.length];
-  const n = 10 + (crypto.getRandomValues(new Uint32Array(1))[0] % 90);
-  return `${pick()}-${pick()}-${n}`;
-}
+export type MemberView = {
+  id: string; displayName: string; phone: string | null; avatar: unknown; active: boolean; isHost: boolean; isMe: boolean;
+  hasPassword: boolean; mustChangePassword: boolean; itemCount: number;
+};
 
-export function CreateMemberForm({ siteUrl, loginRules }: { siteUrl: string; loginRules: string }) {
+const PW_HINT = "Laisse vide pour en générer un automatiquement (3 mots + un nombre).";
+
+export function CreateMemberForm({ sms }: { sms: SmsContext }) {
   const [creds, setCreds] = useState<Creds | null>(null);
-  const [pw, setPw] = useState("");
+  const [formKey, setFormKey] = useState(0);
   return (
     <>
-      <ActionForm action={createMemberAction} className="grid" resetOnSuccess
-        onSuccess={(s: ActionState) => { setCreds(s.data as Creds); setPw(""); }}>
-        <label className="f-third">Prénom ou nom
-          <input name="displayName" required maxLength={40} placeholder="Mamie Jo" />
+      <ActionForm key={formKey} action={createMemberAction} className="grid"
+        onSuccess={(s: ActionState) => { setCreds(s.data as Creds); setFormKey((k) => k + 1); }}>
+        <label className="f-half">Prénom
+          <input name="displayName" required maxLength={40} placeholder="Tom" />
+          <span className="hint">C&apos;est le nom affiché sur sa vignette de connexion.</span>
         </label>
-        <label className="f-third">Identifiant de connexion
-          <input name="login" required maxLength={30} autoCapitalize="none" spellCheck={false} placeholder="mamie.jo" />
+        <label className="f-half">Portable
+          <input name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={25} placeholder="06 12 34 56 78" />
+          <span className="hint">Facultatif, pour lui envoyer ses accès par SMS.</span>
         </label>
-        <label className="f-third">Mot de passe initial
-          <input name="password" required minLength={8} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="off" />
+        <label className="f-full">Mot de passe initial
+          <input name="password" autoComplete="off" maxLength={200} placeholder="Généré automatiquement" />
+          <span className="hint">{PW_HINT} Le membre le remplacera à sa première connexion.</span>
         </label>
-        <p className="hint f-full">Identifiant : {loginRules}</p>
-        <div className="actions">
-          <SubmitButton pendingLabel="Création…">Créer le profil</SubmitButton>
-          <button type="button" className="btn ghost small" onClick={() => setPw(suggestPassword())}>Proposer un mot de passe</button>
+        <div className="f-full" style={{ display: "grid", gap: 8 }}>
+          <span className="lbl">Avatar</span>
+          <AvatarBuilder initial={null} />
         </div>
+        <div className="actions"><SubmitButton pendingLabel="Création…">Créer le profil</SubmitButton></div>
       </ActionForm>
-      {creds ? <SmsCard {...creds} siteUrl={siteUrl} /> : null}
+      {/* Le formulaire est remis à neuf (avatar compris) : le message de succès vit ici. */}
+      {creds ? <p className="status ok" role="status">Profil de {creds.displayName} créé.</p> : null}
+      {creds ? (
+        <SmsComposer key={creds.id + creds.password} member={{ ...creds, isMe: false }} initialPassword={creds.password} {...sms} onClose={() => setCreds(null)} />
+      ) : null}
     </>
   );
 }
 
-export function ManageMember({ m, siteUrl }: { m: { id: string; displayName: string; login: string | null; active: boolean; isHost: boolean; hasPassword: boolean }; siteUrl: string }) {
-  const [creds, setCreds] = useState<Creds | null>(null);
-  const [pw, setPw] = useState("");
+/** Une ligne de la liste des membres : bouton SMS en façade, gestion repliée. */
+export function MemberRow({ m, sms }: { m: MemberView; sms: SmsContext }) {
+  const [smsOpen, setSmsOpen] = useState(false);
+  // Mot de passe provisoire tout juste généré : gardé en mémoire de l'onglet
+  // le temps de préparer le SMS, jamais renvoyé par le serveur ensuite.
+  const [password, setPassword] = useState<string | null>(null);
+  const onReset = (s: ActionState) => { setPassword((s.data as Creds).password); setSmsOpen(true); };
+  const canSms = !m.isMe;
+  return (
+    <div className={`member${m.active ? "" : " inactive"}`}>
+      <Avatar avatar={m.avatar} size={44} />
+      <div style={{ minWidth: 0 }}>
+        <div className="name">{m.displayName}</div>
+        <div className="meta">
+          {m.phone ? formatPhone(m.phone) : <>Pas de numéro</>} · {m.itemCount} idée{m.itemCount > 1 ? "s" : ""}
+        </div>
+      </div>
+      <div className="member-tags">
+        {m.isHost ? <span className="badge">Hôte</span> : null}
+        {!m.active ? <span className="pill past">Désactivé</span> : null}
+        {m.active && !m.hasPassword ? <span className="pill wait">À activer</span> : null}
+        {m.active && m.hasPassword && m.mustChangePassword && !m.isHost ? <span className="pill wait">1re connexion à faire</span> : null}
+        {canSms ? (
+          <button type="button" className={`icon-btn${smsOpen ? " on" : ""}`} aria-expanded={smsOpen}
+            aria-label={`Envoyer ses accès par SMS à ${m.displayName}`} title={m.phone ? `SMS à ${formatPhone(m.phone)}` : "SMS (aucun numéro enregistré)"}
+            onClick={() => setSmsOpen((o) => !o)}>
+            <PhoneIcon /><span>SMS</span>
+          </button>
+        ) : null}
+      </div>
+      {smsOpen ? (
+        <div className="member-sms">
+          <SmsComposer key={password ?? "x"} member={{ id: m.id, displayName: m.displayName, phone: m.phone, isMe: m.isMe, hasOwnPassword: m.hasPassword && !m.mustChangePassword }}
+            initialPassword={password} {...sms} onClose={() => { setSmsOpen(false); setPassword(null); }} />
+        </div>
+      ) : null}
+      <details>
+        <summary>Gérer {m.isMe ? "mon profil" : "ce profil"}</summary>
+        <ManageMember m={m} onReset={onReset} />
+      </details>
+    </div>
+  );
+}
+
+function ManageMember({ m, onReset }: { m: MemberView; onReset: (s: ActionState) => void }) {
   return (
     <div className="admin-forms">
       <ActionForm action={updateMemberAction} className="grid">
         <input type="hidden" name="id" value={m.id} />
-        <label className="f-half">Prénom ou nom
+        <label className="f-half">Prénom
           <input name="displayName" required maxLength={40} defaultValue={m.displayName} />
         </label>
-        <label className="f-half">Identifiant
-          <input name="login" required maxLength={30} defaultValue={m.login ?? ""} autoCapitalize="none" spellCheck={false} />
+        <label className="f-half">Portable
+          <input name="phone" type="tel" inputMode="tel" maxLength={25} defaultValue={m.phone ? formatPhone(m.phone) : ""} placeholder="06 12 34 56 78" />
         </label>
+        <details className="f-full avatar-edit">
+          <summary>Changer l&apos;avatar</summary>
+          <AvatarBuilder initial={m.avatar} />
+        </details>
         <div className="actions"><SubmitButton className="btn small">Enregistrer</SubmitButton></div>
       </ActionForm>
 
-      {!m.isHost && m.login ? (
-        <ActionForm action={resetPasswordAction} className="grid" resetOnSuccess
-          onSuccess={(s: ActionState) => { setCreds(s.data as Creds); setPw(""); }}>
+      {!m.isMe ? (
+        <ActionForm action={resetPasswordAction} className="grid" resetOnSuccess onSuccess={onReset}>
           <input type="hidden" name="id" value={m.id} />
-          <input type="hidden" name="login" value={m.login} />
-          <input type="hidden" name="displayName" value={m.displayName} />
           <label className="f-full">{m.hasPassword ? "Nouveau mot de passe provisoire" : "Mot de passe provisoire (active le profil)"}
-            <input name="password" required minLength={8} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="off" />
+            <input name="password" autoComplete="off" maxLength={200} placeholder="Généré automatiquement" />
+            <span className="hint">{PW_HINT} L&apos;ancien mot de passe cessera de fonctionner.</span>
           </label>
           <div className="actions">
             <SubmitButton className="btn small">{m.hasPassword ? "Réinitialiser le mot de passe" : "Activer le profil"}</SubmitButton>
-            <button type="button" className="btn ghost small" onClick={() => setPw(suggestPassword())}>Proposer</button>
           </div>
         </ActionForm>
-      ) : null}
-      {creds ? <SmsCard {...creds} siteUrl={siteUrl} /> : null}
+      ) : <p className="hint">Ton propre mot de passe se change dans « Mon compte ».</p>}
 
       {!m.isHost ? (
         <div className="confirm-row">
@@ -90,7 +144,23 @@ export function ManageMember({ m, siteUrl }: { m: { id: string; displayName: str
             <ConfirmSubmit label="Supprimer" confirmLabel="Supprimer définitivement (liste comprise)" />
           </ActionForm>
         </div>
-      ) : <p className="hint">Ton propre mot de passe se change dans « Mon compte ».</p>}
+      ) : null}
     </div>
+  );
+}
+
+export function SmsTemplateForm({ template }: { template: string }) {
+  const [value, setValue] = useState(template);
+  return (
+    <ActionForm action={saveSmsTemplateAction} className="grid">
+      <label className="f-full">Modèle du message
+        <textarea name="template" rows={6} maxLength={SMS_TEMPLATE_MAX} value={value} onChange={(e) => setValue(e.target.value)} />
+        <span className="hint">Variables remplacées automatiquement : <code>{"{prenom}"}</code>, <code>{"{motdepasse}"}</code>, <code>{"{lien}"}</code>. En « simple rappel », les lignes contenant <code>{"{motdepasse}"}</code> sont retirées.</span>
+      </label>
+      <div className="actions">
+        <SubmitButton className="btn small">Enregistrer le modèle</SubmitButton>
+        <button type="submit" name="reset" value="1" className="btn ghost small" onClick={() => setValue(DEFAULT_SMS_TEMPLATE)}>Revenir au modèle par défaut</button>
+      </div>
+    </ActionForm>
   );
 }

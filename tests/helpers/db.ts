@@ -10,7 +10,7 @@ if (!/test/.test(process.env.DATABASE_URL ?? "")) {
 
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "SantaAssignment","SantaExclusion","SantaParticipant","SantaEvent","Claim","WishItem","Session","LoginAttempt","User" CASCADE`,
+    `TRUNCATE "SantaAssignment","SantaExclusion","SantaParticipant","SantaEvent","Claim","WishItem","Session","LoginAttempt","Setting","User" CASCADE`,
   );
 }
 
@@ -21,14 +21,14 @@ export const PASSWORD = "mot-de-passe-solide";
 
 /** Crée un compte puis se connecte réellement : l'acteur obtenu est celui
  * que le serveur relit en base, rôle compris. */
-export async function makeUser(name: string, role: "HOST" | "MEMBER" = "MEMBER"): Promise<SessionUser & { token: string; login: string }> {
-  const loginName = name.toLowerCase();
-  await prisma.user.create({
-    data: { displayName: name, login: loginName, role, passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
+export async function makeUser(name: string, role: "HOST" | "MEMBER" = "MEMBER"): Promise<SessionUser & { token: string }> {
+  const u = await prisma.user.create({
+    data: { displayName: name, role, passwordHash: await hashPassword(PASSWORD), mustChangePassword: false },
   });
-  const r = await login(loginName, PASSWORD, freshIp());
+  // Connexion comme dans l'écran de sélection : id du profil + mot de passe.
+  const r = await login(u.id, PASSWORD, freshIp());
   if (!r.ok) throw new Error(r.error);
-  return { ...r.user, token: r.token, login: loginName };
+  return { ...r.user, token: r.token };
 }
 
 export { prisma };

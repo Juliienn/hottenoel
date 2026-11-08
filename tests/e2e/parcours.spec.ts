@@ -9,10 +9,11 @@ const parisDay = (offset = 0) => {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 };
 
-async function loginAs(page: Page, login: string, password: string, expectSuccess = true) {
+/** Connexion façon « qui regarde ? » : vignette du profil, puis mot de passe. */
+async function loginAs(page: Page, name: string, password: string, expectSuccess = true) {
   await page.goto("/connexion");
-  await page.getByLabel("Identifiant").fill(login);
-  await page.getByLabel("Mot de passe").fill(password);
+  await page.getByRole("button", { name: new RegExp(`^Profil de ${name}( \\(Hôte\\))?$`) }).click();
+  await page.getByLabel(`Mot de passe de ${name}`).fill(password);
   await page.getByRole("button", { name: "Se connecter" }).click();
   // Attendre la fin de la connexion avant toute autre navigation.
   if (expectSuccess) await page.waitForURL((u) => !u.pathname.startsWith("/connexion"));
@@ -27,7 +28,13 @@ async function shot(page: Page, name: string) {
 
 test.describe.configure({ mode: "serial" });
 
-const HOST = { login: "julien", password: "mot-de-passe-hote-1" };
+// L'écran d'accueil (5 s) est testé à part : ailleurs, on le marque comme déjà vu.
+test.beforeEach(async ({ page }, info) => {
+  if (!info.title.startsWith("accueil")) await page.addInitScript(() => sessionStorage.setItem("hotte-intro", "1"));
+});
+
+const HOST = { login: "Julien", password: "mot-de-passe-hote-1" };
+let tomPassword = "";
 let samReceiver = "";
 
 test("une page privée renvoie vers la connexion", async ({ page }) => {
@@ -41,7 +48,7 @@ test("installation : jeton obligatoire, puis page fermée", async ({ page }) => 
   await page.goto("/installation");
   await page.getByLabel("Jeton d'installation").fill("mauvais-jeton");
   await page.getByLabel("Ton prénom").fill("Julien");
-  await page.getByLabel("Identifiant de connexion").fill(HOST.login);
+  await expect(page.getByLabel("Identifiant de connexion")).toHaveCount(0);
   await page.getByLabel("Mot de passe").fill(HOST.password);
   await page.getByRole("button", { name: "Créer le compte Hôte" }).click();
   await expect(page.getByText("Jeton d'installation incorrect.")).toBeVisible();
@@ -52,27 +59,65 @@ test("installation : jeton obligatoire, puis page fermée", async ({ page }) => 
   await expect(page.getByText("Installation terminée")).toBeVisible();
 });
 
-test("l'Hôte crée les profils et obtient le SMS à envoyer", async ({ page }) => {
+test("écran de connexion : un mauvais mot de passe ne connecte pas", async ({ page }) => {
+  await page.goto("/connexion");
+  await expect(page.getByRole("heading", { name: "Qui ouvre sa hotte ?" })).toBeVisible();
+  await expect(page.getByLabel(/Identifiant/)).toHaveCount(0);
+  await expect(page.locator(".who-tile")).toHaveCount(1);
+  await page.getByRole("button", { name: "Profil de Julien (Hôte)" }).click();
+  // Cliquer sur le profil ne suffit pas : toujours sur la page de connexion.
+  await expect(page).toHaveURL(/\/connexion/);
+  await expect(page.getByLabel("Mot de passe de Julien")).toBeFocused();
+  await page.getByRole("button", { name: "Changer de profil" }).click();
+  await expect(page.locator(".who-tile")).toHaveCount(1);
   await loginAs(page, HOST.login, "mauvais", false);
-  await expect(page.getByText("Identifiant ou mot de passe incorrect.")).toBeVisible();
+  await expect(page.getByText("Mot de passe incorrect.")).toBeVisible();
+  await page.goto("/ma-liste");
+  await expect(page).toHaveURL(/\/connexion/);
+});
+
+test("l'Hôte crée les profils sans identifiant et prépare le SMS", async ({ page }) => {
   await loginAs(page, HOST.login, HOST.password);
   await expect(page).toHaveURL(/\/ma-liste/);
   await page.getByRole("link", { name: "Espace Hôte" }).click();
-  for (const [name, login] of [["Sam", "sam"], ["Julie", "julie"], ["Tom", "tom"]]) {
-    await page.getByLabel("Prénom ou nom").first().fill(name);
-    await page.getByLabel("Identifiant de connexion").fill(login);
-    await page.getByLabel("Mot de passe initial").fill(`${login}-provisoire-1`);
+  for (const [name, phone] of [["Sam", "06 11 22 33 44"], ["Julie", ""]]) {
+    await page.getByLabel("Prénom").first().fill(name);
+    await page.getByLabel("Portable").first().fill(phone);
+    await page.getByLabel("Mot de passe initial").fill(`${name.toLowerCase()}-provisoire-1`);
     await page.getByRole("button", { name: "Créer le profil" }).click();
     await expect(page.getByText(`Profil de ${name} créé.`)).toBeVisible();
-    await expect(page.locator(".sms pre")).toContainText(`Identifiant : ${login}`);
+    const msg = page.locator(".box .sms textarea");
+    await expect(msg).toHaveValue(new RegExp(`^Bonjour ${name} !`));
+    await expect(msg).toHaveValue(new RegExp(`- Profil : ${name}\n- Mot de passe : ${name.toLowerCase()}-provisoire-1`));
+    await expect(page.locator(".box .sms .status")).toContainText("Message préparé");
   }
+  // Lien SMS : numéro et message préremplis, sans prétendre à un envoi.
+  await page.getByLabel("Prénom").first().fill("Tom");
+  await page.getByLabel("Portable").first().fill("+33 6 99 88 77 66");
+  await page.getByRole("button", { name: "Avatar Garçon" }).first().click();
+  await page.getByRole("button", { name: "Créer le profil" }).click();
+  await expect(page.getByText("Profil de Tom créé.")).toBeVisible();
+  const text = await page.locator(".box .sms textarea").inputValue();
+  tomPassword = /Mot de passe : (\S+)/.exec(text)![1];
+  expect(tomPassword).toMatch(/^[a-z-]+-\d{2}$/);
+  const href = await page.getByRole("link", { name: "Ouvrir l'application SMS" }).getAttribute("href");
+  expect(href).toMatch(/^sms:\+33699887766\?&body=/);
+  expect(decodeURIComponent(href!.split("body=")[1])).toBe(text);
+  await expect(page.getByRole("button", { name: /Envoyer via/ })).toHaveCount(0); // aucun fournisseur configuré
+  // Doublon de prénom refusé.
+  await page.getByLabel("Prénom").first().fill("sam");
+  await page.getByRole("button", { name: "Créer le profil" }).click();
+  await expect(page.getByText("Un profil s'appelle déjà « sam »", { exact: false })).toBeVisible();
   await expect(page.locator(".member")).toHaveCount(4);
+  await expect(page.locator(".member", { hasText: "Sam" }).first()).toContainText("+33 6 11 22 33 44");
   await shot(page, "hote-desktop");
   await logout(page);
+  await page.goto("/connexion");
+  await expect(page.locator(".who-tile")).toHaveCount(4);
 });
 
 test("première connexion : mot de passe imposé, puis liste", async ({ page }) => {
-  await loginAs(page, "sam", "sam-provisoire-1");
+  await loginAs(page, "Sam", "sam-provisoire-1");
   await expect(page).toHaveURL(/\/compte\/mot-de-passe/);
   await page.goto("/ma-liste");
   await expect(page).toHaveURL(/\/compte\/mot-de-passe/);
@@ -88,7 +133,7 @@ test("première connexion : mot de passe imposé, puis liste", async ({ page }) 
 });
 
 test("un membre n'a pas accès à l'Espace Hôte", async ({ page }) => {
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await expect(page.getByRole("link", { name: "Espace Hôte" })).toHaveCount(0);
   await page.goto("/hote");
   await expect(page.getByText("Page introuvable")).toBeVisible();
@@ -97,7 +142,7 @@ test("un membre n'a pas accès à l'Espace Hôte", async ({ page }) => {
 });
 
 test("réservation : visible par les autres, invisible pour le destinataire", async ({ page }) => {
-  await loginAs(page, "julie", "julie-provisoire-1");
+  await loginAs(page, "Julie", "julie-provisoire-1");
   await page.getByLabel("Mot de passe reçu par SMS").fill("julie-provisoire-1");
   await page.getByLabel(/^Nouveau mot de passe/).fill("mot-de-passe-de-julie");
   await page.getByLabel("Confirme le nouveau mot de passe").fill("mot-de-passe-de-julie");
@@ -116,7 +161,7 @@ test("réservation : visible par les autres, invisible pour le destinataire", as
   await expect(page.getByRole("button", { name: "Je l'offre" })).toHaveCount(0);
   await logout(page);
 
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await expect(page.locator(".tag h3", { hasText: "Écharpe rouge" })).toBeVisible();
   const text = await page.locator("main").innerText();
   expect(text).not.toMatch(/Julie|Pris par|Tu l'offres|Libre/);
@@ -165,7 +210,7 @@ test("Secret Santa : création, tirage, chacun ne voit que son destinataire", as
   await expect(page.getByText(/Tirage impossible : avec les exclusions actuelles, Sam ne peut offrir de cadeau à personne/)).toBeVisible();
   await logout(page);
 
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await page.getByRole("link", { name: "Secret Santa" }).click();
   await expect(page.locator(".event-card")).toHaveCount(2);
   await page.locator(".event-card", { hasText: "Noël 2026" }).click();
@@ -177,16 +222,80 @@ test("Secret Santa : création, tirage, chacun ne voit que son destinataire", as
   await shot(page, "santa-membre-desktop");
   const url = page.url();
   await logout(page);
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await page.goto(url);
   await expect(page.locator(".reveal .to")).toHaveText(samReceiver);
   await logout(page);
 });
 
+test("l'Hôte modifie un profil, régénère un mot de passe depuis le bouton SMS", async ({ page }) => {
+  await loginAs(page, "Tom", tomPassword);
+  await expect(page).toHaveURL(/\/compte\/mot-de-passe/);
+  await logout(page);
+  await loginAs(page, HOST.login, HOST.password);
+  await page.goto("/hote");
+  const tom = page.locator(".member").filter({ has: page.locator(".name", { hasText: /^Tom$/ }) });
+  await tom.getByText("Gérer ce profil").click();
+  await tom.getByLabel("Prénom").fill("Tommy");
+  await tom.getByLabel("Portable").fill("07 00 00 00 01");
+  await tom.getByRole("button", { name: "Enregistrer" }).click();
+  const tommy = page.locator(".member").filter({ has: page.locator(".name", { hasText: /^Tommy$/ }) });
+  await expect(tommy.getByText("Profil mis à jour.")).toBeVisible();
+  await expect(tommy).toContainText("+33 7 00 00 00 01");
+  await tommy.getByRole("button", { name: "Envoyer ses accès par SMS à Tommy" }).click();
+  await expect(tommy.getByText("stocké haché")).toBeVisible();
+  await tommy.getByRole("button", { name: "Générer un nouveau mot de passe provisoire" }).click();
+  await tommy.getByRole("button", { name: "Confirmer : remplacer son mot de passe" }).click();
+  const msg = tommy.locator(".sms textarea");
+  await expect(msg).toHaveValue(/- Profil : Tommy/);
+  const fresh = /Mot de passe : (\S+)/.exec(await msg.inputValue())![1];
+  expect(fresh).not.toBe(tomPassword);
+  // Message personnalisable avant l'envoi.
+  await msg.fill("Coucou Tommy, ton code : " + fresh);
+  expect(decodeURIComponent((await tommy.getByRole("link", { name: "Ouvrir l'application SMS" }).getAttribute("href"))!.split("body=")[1])).toBe("Coucou Tommy, ton code : " + fresh);
+  // Simple rappel : aucun mot de passe dans le message.
+  await tommy.getByRole("radio", { name: "Simple rappel, sans mot de passe" }).click();
+  await expect(msg).not.toHaveValue(/Mot de passe/);
+  await shot(page, "hote-sms");
+  await logout(page);
+  await loginAs(page, "Tommy", tomPassword, false);
+  await expect(page.getByText("Mot de passe incorrect.")).toBeVisible();
+  await loginAs(page, "Tommy", fresh);
+  await expect(page).toHaveURL(/\/compte\/mot-de-passe/);
+});
+
+test("accueil : animation à l'ouverture, puis plus jamais dans l'onglet", async ({ page }) => {
+  await page.goto("/");
+  const intro = page.locator(".intro");
+  await expect(intro).toBeVisible();
+  await expect(intro.getByRole("heading", { name: "La Hotte familiale" })).toBeVisible();
+  // YouTube est injoignable ici : la lecture auto échoue, le bouton prend le relais.
+  await expect(intro.getByRole("button", { name: "Activer la musique" })).toBeVisible({ timeout: 6000 });
+  await shot(page, "accueil-desktop");
+  // Disparaît seule après quelques secondes, en dévoilant la sélection des profils.
+  await expect(intro).toHaveCount(0, { timeout: 9000 });
+  await expect(page.getByRole("heading", { name: "Qui ouvre sa hotte ?" })).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".intro")).toBeHidden();
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
+  await page.getByRole("link", { name: "La famille" }).click();
+  await expect(page.locator(".intro")).toHaveCount(0);
+});
+
+test("accueil : « Entrer » passe l'animation, la musique se lance au clic", async ({ page }) => {
+  await page.goto("/connexion");
+  // force : le bouton pulse en continu, Playwright ne le juge jamais « immobile ».
+  await page.locator(".intro").getByRole("button", { name: "Activer la musique" }).click({ force: true });
+  await expect(page.locator(".music-panel")).toBeVisible();
+  await page.locator(".intro").getByRole("button", { name: /Entrer/ }).click();
+  await expect(page.locator(".intro")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Profil de Sam/ })).toBeVisible();
+});
+
 test("la musique se lance sur demande, survit à la navigation et se coupe", async ({ page }) => {
   // YouTube est inaccessible depuis l'environnement de test : on vérifie les
   // commandes et la persistance, pas le son lui-même.
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   await expect(page.locator(".music-panel")).toBeHidden();
   await page.getByRole("button", { name: "Activer la musique de Noël" }).click();
   await expect(page.locator(".music-panel")).toBeVisible();
@@ -203,7 +312,7 @@ test("la musique se lance sur demande, survit à la navigation et se coupe", asy
 });
 
 test("les décorations ne bloquent aucun clic", async ({ page }) => {
-  await loginAs(page, "sam", "mot-de-passe-de-sam");
+  await loginAs(page, "Sam", "mot-de-passe-de-sam");
   for (const sel of [".snow", ".garland", ".sky-sleigh", ".footer-scene"]) {
     const pe = await page.locator(sel).first().evaluate((el) => getComputedStyle(el).pointerEvents);
     expect(pe, sel).toBe("none");
@@ -220,8 +329,21 @@ test("les décorations ne bloquent aucun clic", async ({ page }) => {
 test.describe("affichage smartphone", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 
+  test("accueil sur smartphone", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".intro")).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    await page.waitForTimeout(2500);
+    await shot(page, "accueil-mobile");
+    await page.locator(".intro").getByRole("button", { name: /Entrer/ }).click();
+    await expect(page.locator(".intro")).toHaveCount(0);
+  });
+
   test("pages principales sans défilement horizontal", async ({ page }) => {
     await page.goto("/connexion");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, "/connexion").toBeLessThanOrEqual(0);
     await shot(page, "connexion-mobile");
     await loginAs(page, HOST.login, HOST.password);
     for (const path of ["/ma-liste", "/famille", "/mes-cadeaux", "/secret-santa", "/hote", "/compte"]) {
