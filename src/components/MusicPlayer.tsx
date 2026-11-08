@@ -14,20 +14,40 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // son : on propose alors « Reprendre » à l'endroit où la musique s'était arrêtée.
 const VIDEO_ID = "yXQViqx6GMY";
 const STORE = "hotte-musique";
-/** « off » quand le membre a coupé la musique : l'accueil ne la relance plus
- * d'office (le bouton reste disponible). Mémorisé sur l'appareil. */
-const PREF = "hotte-musique-auto";
-
 // Pilotage depuis l'écran d'accueil (cf. Intro.tsx) :
 //  - "auto" : tentative de lecture sans clic. La plupart des navigateurs la
 //    refusent avec le son tant que l'utilisateur n'a pas interagi avec le
-//    site ; on le détecte et on annonce "blocked", sans rien afficher.
+//    site ; on le détecte tout de suite (son muet de test) et on annonce
+//    "blocked", sans rien afficher.
 //  - "play" : lecture suite à un clic (toujours autorisée).
+//  - "stop" : fin de l'accueil, la musique s'éteint en fondu. Le bouton
+//    « Musique » permet ensuite de la relancer.
 export const MUSIC_EVENT = "hotte-musique";
 export const MUSIC_STATE_EVENT = "hotte-musique-etat";
 export type MusicState = "loading" | "playing" | "blocked" | "unavailable";
+export type MusicCommand = "auto" | "play" | "stop";
 const announce = (s: MusicState) => window.dispatchEvent(new CustomEvent(MUSIC_STATE_EVENT, { detail: s }));
 const AUTOPLAY_GRACE_MS = 2500;
+const VOLUME = 45;
+// 10 ms de silence : sert à demander au navigateur si le son sans clic est permis.
+const SILENCE = "data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
+/** Le navigateur autorise-t-il le son sans clic ? Réponse en quelques ms :
+ * même règle pour cet <audio> que pour le lecteur YouTube intégré. */
+async function soundAllowedWithoutClick(): Promise<boolean> {
+  const policy = (navigator as any).getAutoplayPolicy?.("mediaelement");
+  if (policy === "disallowed" || policy === "allowed-muted") return false;
+  if (policy === "allowed") return true;
+  try {
+    const a = new Audio(SILENCE);
+    a.volume = 0.01;
+    await Promise.race([a.play(), new Promise((_, no) => setTimeout(() => no(new Error("délai")), 1500))]);
+    a.pause();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type Status = "off" | "resumable" | "probing" | "loading" | "playing" | "paused" | "error";
 
@@ -91,13 +111,10 @@ export function MusicPlayer() {
     // créé pendant le clic (seul cas où le son est garanti).
     if (!auto && statusRef.current === "probing") destroy();
     if (playerRef.current) { playerRef.current.playVideo(); return; }
-    if (auto) {
-      const policy = (navigator as any).getAutoplayPolicy?.("mediaelement");
-      if (policy === "disallowed") { announce("blocked"); return; }
-    }
+    if (auto && !(await soundAllowedWithoutClick())) { announce("blocked"); return; }
+    if (auto && statusRef.current !== "off" && statusRef.current !== "resumable") return; // clic entre-temps
     setStatus(auto ? "probing" : "loading");
     statusRef.current = auto ? "probing" : "loading";
-    if (!auto) { try { localStorage.removeItem(PREF); } catch { /* ignoré */ } }
     announce("loading");
     try {
       await loadYouTubeApi();
@@ -120,7 +137,7 @@ export function MusicPlayer() {
       playerVars: { autoplay: 1, loop: 1, playlist: VIDEO_ID, start: startAt, playsinline: 1, rel: 0, modestbranding: 1 },
       events: {
         onReady: (e: any) => {
-          e.target.setVolume(45); e.target.playVideo();
+          e.target.setVolume(VOLUME); e.target.playVideo();
           if (auto) {
             // Toujours pas de lecture après ce délai : le navigateur a bloqué le son.
             grace = setTimeout(() => {
@@ -148,12 +165,10 @@ export function MusicPlayer() {
 
   useEffect(() => {
     const onCommand = (e: Event) => {
-      const cmd = (e as CustomEvent<"auto" | "play">).detail;
-      if (cmd === "play") { void start(false); return; }
-      let pref: string | null = null;
-      try { pref = localStorage.getItem(PREF); } catch { /* ignoré */ }
-      if (pref === "off") { announce("blocked"); return; }
-      void start(true);
+      const cmd = (e as CustomEvent<MusicCommand>).detail;
+      if (cmd === "play") void start(false);
+      else if (cmd === "auto") void start(true);
+      else if (cmd === "stop") fadeOut();
     };
     window.addEventListener(MUSIC_EVENT, onCommand);
     return () => window.removeEventListener(MUSIC_EVENT, onCommand);
@@ -164,9 +179,24 @@ export function MusicPlayer() {
   const stop = () => {
     destroy();
     writeStore(null);
-    try { localStorage.setItem(PREF, "off"); } catch { /* ignoré */ }
     setStatus("off");
   };
+
+  /** Fin de l'accueil : baisse le volume en ~0,8 s puis arrête le lecteur.
+   * Rien n'est mémorisé : pas de « Reprendre », juste le bouton « Musique ». */
+  const fadeOut = useCallback(() => {
+    const player = playerRef.current;
+    if (!player) { if (statusRef.current === "probing" || statusRef.current === "loading") stop(); return; }
+    let v = VOLUME;
+    const id = setInterval(() => {
+      if (playerRef.current !== player) { clearInterval(id); return; }
+      v -= VOLUME / 10;
+      if (v > 0) { try { player.setVolume(v); } catch { /* lecteur pas prêt */ } return; }
+      clearInterval(id);
+      stop();
+    }, 80);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const probing = status === "probing";
   const active = probing || status === "loading" || status === "playing" || status === "paused" || status === "error";

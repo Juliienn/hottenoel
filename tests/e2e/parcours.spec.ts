@@ -264,17 +264,56 @@ test("l'Hôte modifie un profil, régénère un mot de passe depuis le bouton SM
   await expect(page).toHaveURL(/\/compte\/mot-de-passe/);
 });
 
-test("accueil : animation à l'ouverture, puis plus jamais dans l'onglet", async ({ page }) => {
+// Le navigateur autorise-t-il le son sans clic ? On fixe la réponse (sinon
+// elle dépend de la configuration de Chromium).
+async function autoplay(page: Page, allowed: boolean) {
+  await page.addInitScript((ok) => {
+    HTMLMediaElement.prototype.play = function () {
+      return ok ? Promise.resolve() : Promise.reject(new DOMException("bloqué", "NotAllowedError"));
+    };
+  }, allowed);
+}
+
+/** YouTube est injoignable ici : on sert une imitation de son API qui joue
+ * « pour de faux » et note chaque commande dans window.__yt. */
+async function fakeYouTube(page: Page) {
+  await page.route("https://www.youtube.com/iframe_api", (route) => route.fulfill({
+    contentType: "text/javascript",
+    body: `window.__yt = [];
+      window.YT = { Player: function (el, opts) {
+        var self = this, log = function (x) { window.__yt.push(x); };
+        self.setVolume = function (v) { log("volume:" + Math.round(v)); };
+        self.playVideo = function () { log("play"); setTimeout(function () { opts.events.onStateChange({ data: 1 }); }, 300); };
+        self.pauseVideo = function () { log("pause"); };
+        self.getCurrentTime = function () { return 1; };
+        self.destroy = function () { log("destroy"); };
+        setTimeout(function () { opts.events.onReady({ target: self }); }, 100);
+      } };
+      setTimeout(function () { window.onYouTubeIframeAPIReady(); }, 0);`,
+  }));
+}
+const ytLog = (page: Page) => page.evaluate(() => (window as unknown as { __yt?: string[] }).__yt ?? []);
+
+test("accueil : son autorisé, la musique joue pendant l'animation puis s'arrête", async ({ page }) => {
+  await autoplay(page, true);
+  await fakeYouTube(page);
   await page.goto("/");
   const intro = page.locator(".intro");
-  await expect(intro).toBeVisible();
   await expect(intro.getByRole("heading", { name: "La Hotte familiale" })).toBeVisible();
-  // YouTube est injoignable ici : la lecture auto échoue, le bouton prend le relais.
-  await expect(intro.getByRole("button", { name: "Activer la musique" })).toBeVisible({ timeout: 6000 });
+  await expect(intro.getByText("Mariah Carey — All I Want for Christmas Is You")).toBeVisible();
+  expect(await ytLog(page)).toContain("play");
   await shot(page, "accueil-desktop");
-  // Disparaît seule après quelques secondes, en dévoilant la sélection des profils.
+  // Fin de l'accueil : fondu puis arrêt, la grille des profils apparaît.
   await expect(intro).toHaveCount(0, { timeout: 9000 });
   await expect(page.getByRole("heading", { name: "Qui ouvre sa hotte ?" })).toBeVisible();
+  await expect.poll(() => ytLog(page)).toContain("destroy");
+  expect(await ytLog(page)).toContain("volume:27"); // le volume a bien baissé progressivement
+  await expect(page.locator(".music-panel")).toBeHidden();
+  // Le bouton relance la musique à la demande.
+  await page.getByRole("button", { name: "Activer la musique de Noël" }).click();
+  await expect(page.locator(".music-panel")).toBeVisible();
+  await page.getByRole("button", { name: "Couper la musique" }).click();
+  // Plus d'accueil dans cet onglet, ni au rechargement ni en naviguant.
   await page.reload();
   await expect(page.locator(".intro")).toBeHidden();
   await loginAs(page, "Sam", "mot-de-passe-de-sam");
@@ -282,14 +321,40 @@ test("accueil : animation à l'ouverture, puis plus jamais dans l'onglet", async
   await expect(page.locator(".intro")).toHaveCount(0);
 });
 
-test("accueil : « Entrer » passe l'animation, la musique se lance au clic", async ({ page }) => {
+test("accueil : son bloqué, l'accueil attend un clic pour s'ouvrir en musique", async ({ page }) => {
+  await autoplay(page, false);
+  await fakeYouTube(page);
   await page.goto("/connexion");
+  const intro = page.locator(".intro");
+  const open = intro.getByRole("button", { name: "Ouvrir avec la musique" });
+  await expect(open).toBeVisible();
+  expect(await ytLog(page)).toEqual([]); // rien n'a été lancé sans clic
+  // Il ne s'efface pas en silence : il attend.
+  await page.waitForTimeout(7000);
+  await expect(open).toBeVisible();
   // force : le bouton pulse en continu, Playwright ne le juge jamais « immobile ».
-  await page.locator(".intro").getByRole("button", { name: "Activer la musique" }).click({ force: true });
-  await expect(page.locator(".music-panel")).toBeVisible();
-  await page.locator(".intro").getByRole("button", { name: /Entrer/ }).click();
+  await open.click({ force: true });
+  await expect(intro.getByText("Mariah Carey — All I Want for Christmas Is You")).toBeVisible();
+  await expect(intro).toHaveCount(0, { timeout: 9000 });
+  await expect.poll(() => ytLog(page)).toContain("destroy");
+  await expect(page.locator(".music-panel")).toBeHidden();
+  await expect(page.getByRole("button", { name: /Profil de Sam/ })).toBeVisible();
+});
+
+test("accueil : « Entrer sans musique » passe directement aux profils", async ({ page }) => {
+  await autoplay(page, false);
+  await page.goto("/connexion");
+  await page.locator(".intro").getByRole("button", { name: "Entrer sans musique" }).click();
   await expect(page.locator(".intro")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Profil de Sam/ })).toBeVisible();
+  await expect(page.locator(".music-panel")).toBeHidden();
+});
+
+test("accueil : YouTube injoignable, l'accueil se termine quand même", async ({ page }) => {
+  await autoplay(page, true);
+  await page.goto("/");
+  await expect(page.locator(".intro")).toHaveCount(0, { timeout: 12000 });
+  await expect(page.getByRole("heading", { name: "Qui ouvre sa hotte ?" })).toBeVisible();
 });
 
 test("la musique se lance sur demande, survit à la navigation et se coupe", async ({ page }) => {
@@ -330,6 +395,7 @@ test.describe("affichage smartphone", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 
   test("accueil sur smartphone", async ({ page }) => {
+    await autoplay(page, false);
     await page.goto("/");
     await expect(page.locator(".intro")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

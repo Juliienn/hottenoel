@@ -130,11 +130,15 @@ ne revient ni en changeant de page, ni en rechargeant l'onglet
 « Entrer » ou Échap la passent. Animations réduites si le système le demande ;
 sans JavaScript, elle n'apparaît pas.
 
-Musique : l'accueil tente de lancer le titre automatiquement. **La plupart des
-navigateurs refusent le son sans clic préalable** sur le site : dans ce cas,
-rien ne joue et un bouton « Activer la musique » apparaît ; le clic lance la
-musique et relance l'animation pour qu'elles démarrent ensemble. Si le membre
-a coupé la musique, l'accueil ne la relance plus d'office sur cet appareil.
+Musique : elle accompagne l'animation puis s'éteint en fondu quand l'accueil
+s'efface ; le bouton « Musique » la relance ensuite à la demande. **Les
+navigateurs interdisent le son tant que le visiteur n'a pas cliqué sur le
+site** (règle de Chrome, Safari, Firefox, Edge ; aucun site ne peut la
+contourner). L'accueil le détecte en quelques millisecondes : si le son est
+permis (sites souvent visités dans Chrome, réglage « Autoriser le son »), la
+musique part seule ; sinon l'animation attend un clic sur « Ouvrir avec la
+musique » (qui relance l'animation en même temps que la chanson) ou « Entrer
+sans musique ».
 
 ## Musique
 

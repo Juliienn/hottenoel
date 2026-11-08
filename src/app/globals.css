@@ -331,6 +331,7 @@ body:has(> .intro:not(.leaving)) .music-toggle { display: none; }
   animation: intro-failsafe .6s ease 12s forwards;
   transition: opacity .75s ease, transform .75s ease, filter .75s ease;
 }
+.intro.armed { animation: none; }
 .intro.leaving { opacity: 0; transform: scale(1.08); filter: blur(6px); pointer-events: none; }
 @keyframes intro-failsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 .intro-stage { position: absolute; inset: 0; display: grid; place-items: center; }
