@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="La Hotte familiale, emblème 6"><style>@import url('https://fonts.googleapis.com/css2?family=Young+Serif&amp;family=Fraunces:ital,wght@1,600&amp;family=Nunito+Sans:opsz,wght@6..12,600;6..12,700&amp;display=swap');</style>
+  <rect x="20" y="54" width="60" height="38" rx="2" style="fill:var(--lh-fir,#1d5640)"/>
+  <rect x="20" y="54" width="60" height="3.5" style="fill:#000;opacity:.18"/>
+  <rect x="14" y="41" width="72" height="14" rx="2" style="fill:var(--lh-fir,#1d5640)"/>
+  <rect x="46" y="41" width="8" height="51" style="fill:var(--lh-gold,#c0912f)"/>
+  <path d="M50 42 L41 52 M50 42 L59 52" style="fill:none;stroke:var(--lh-berry,#a8233a);stroke-width:3.6;stroke-linecap:round;stroke-linejoin:round;"/>
+  <path d="M50 42 C30 31 27 7 44 10 C47 11 49 13 50 16 C51 13 53 11 56 10 C73 7 70 31 50 42Z" style="fill:var(--lh-berry,#a8233a)"/>
+  <path d="M41 17 C39 20 39 24 41 27" style="fill:none;stroke:var(--lh-cream,#fff8ea);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.45"/></svg>

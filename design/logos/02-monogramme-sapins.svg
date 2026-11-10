@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4.5 -0.4 293.9 101.8" role="img" aria-label="La Hotte familiale"><style>@import url('https://fonts.googleapis.com/css2?family=Young+Serif&amp;family=Fraunces:ital,wght@1,600&amp;family=Nunito+Sans:opsz,wght@6..12,600;6..12,700&amp;display=swap');</style><g transform="translate(0 2) scale(1.06)">
+    <rect x="24" y="79" width="8" height="11" rx="1.5" style="fill:var(--lh-wood-d,#7a4f26)"/>
+    <path d="M28 12 L40 38 H16Z M28 26 L44 58 H12Z M28 43 L48 81 H8Z" style="fill:var(--lh-fir,#1d5640)"/>
+    <rect x="68" y="79" width="8" height="11" rx="1.5" style="fill:var(--lh-wood-d,#7a4f26)"/>
+    <path d="M72 12 L84 38 H60Z M72 26 L88 58 H56Z M72 43 L92 81 H52Z" style="fill:var(--lh-fir,#1d5640)"/>
+  <path d="M20 49 Q50 72 80 49" style="fill:none;stroke:var(--lh-gold,#c0912f);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;"/>
+  <path d="M36 57 V60" style="fill:none;stroke:var(--lh-gold,#c0912f);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;"/><circle cx="36" cy="63.5" r="4.2" style="fill:var(--lh-berry,#a8233a)"/><path d="M50 60.5 V63.5" style="fill:none;stroke:var(--lh-gold,#c0912f);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;"/><circle cx="50" cy="67" r="4.2" style="fill:var(--lh-cream,#fff8ea)"/><path d="M64 57 V60" style="fill:none;stroke:var(--lh-gold,#c0912f);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;"/><circle cx="64" cy="63.5" r="4.2" style="fill:var(--lh-berry,#a8233a)"/>
+  <polygon points="72.00,1.50 73.98,6.27 79.13,6.68 75.21,10.04 76.41,15.07 72.00,12.38 67.59,15.07 68.79,10.04 64.87,6.68 70.02,6.27" style="fill:var(--lh-gold,#c0912f)"/></g><text x="122" y="52" style="font-family:'Young Serif',Georgia,serif;font-size:40px;fill:var(--lh-ink,#1d5640)">La Hotte</text>
+      <text x="122" y="84" style="font-family:'Young Serif',Georgia,serif;font-size:26px;fill:var(--lh-sub,#a8233a)">familiale</text></svg>

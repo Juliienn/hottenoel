@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 3.8 382.4 112.2" role="img" aria-label="La Hotte familiale"><style>@import url('https://fonts.googleapis.com/css2?family=Young+Serif&amp;family=Fraunces:ital,wght@1,600&amp;family=Nunito+Sans:opsz,wght@6..12,600;6..12,700&amp;display=swap');</style><g transform="rotate(-4 200 60)">
+      <path d="M62 20 H366 a10 10 0 0 1 10 10 V90 a10 10 0 0 1 -10 10 H62 L26 60 Z" style="fill:var(--lh-kraft,#ead8b6)"/>
+      <path d="M64 25 H363 a6 6 0 0 1 6 6 V89 a6 6 0 0 1 -6 6 H64 L33 60 Z" style="fill:none;stroke:var(--lh-kraft-ink,#5c4526);stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:4 3;opacity:.45"/>
+      <circle cx="50" cy="60" r="7" style="fill:var(--lh-bg,#fbfaf6)"/><circle cx="50" cy="60" r="7" style="fill:none;stroke:var(--lh-kraft-ink,#5c4526);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;opacity:.5"/>
+      <text x="82" y="68" style="font-family:'Young Serif',Georgia,serif;font-size:40px;fill:var(--lh-fir,#1d5640)">La Hotte</text>
+      <text x="262" y="68" style="font-family:'Young Serif',Georgia,serif;font-size:22px;font-style:italic;fill:var(--lh-berry,#a8233a)">familiale</text>
+      </g><path d="M47 57 C30 40 18 66 4 44" style="fill:none;stroke:var(--lh-berry,#a8233a);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;"/></svg>
