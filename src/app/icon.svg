@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>.f{fill:#1d5640}.t{fill:#7a4f26}@media (prefers-color-scheme:dark){.f{fill:#5aae86}.t{fill:#c4a070}}</style>
+  <rect class="t" x="24" y="79" width="8" height="11" rx="1.5"/>
+  <rect class="t" x="68" y="79" width="8" height="11" rx="1.5"/>
+  <path class="f" d="M28 12 L40 38 H16Z M28 26 L44 58 H12Z M28 43 L48 81 H8Z"/>
+  <path class="f" d="M72 12 L84 38 H60Z M72 26 L88 58 H56Z M72 43 L92 81 H52Z"/>
+  <path d="M20 49 Q50 72 80 49" fill="none" stroke="#d2a03a" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="36" cy="63.5" r="4.6" fill="#c42a44"/><circle cx="50" cy="67" r="4.6" fill="#fff8ea" stroke="#d2a03a"/><circle cx="64" cy="63.5" r="4.6" fill="#c42a44"/>
+  <polygon points="72,1.5 73.98,6.27 79.13,6.68 75.21,10.04 76.41,15.07 72,12.38 67.59,15.07 68.79,10.04 64.87,6.68 70.02,6.27" fill="#d2a03a"/>
+</svg>

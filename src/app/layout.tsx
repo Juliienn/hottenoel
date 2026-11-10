@@ -6,18 +6,27 @@ import { FooterScene, Garland, SkySleigh, Tree } from "@/components/Decorations"
 import { MusicPlayer } from "@/components/MusicPlayer";
 import { Snow, SnowToggle } from "@/components/Snow";
 import { Intro, INTRO_HEAD_SCRIPT } from "@/components/Intro";
+import { Logo } from "@/components/Logo";
 
 export const metadata: Metadata = {
   title: { default: "La Hotte familiale", template: "%s · La Hotte familiale" },
   description: "Les listes de Noël de la famille.",
   // Site familial privé : rien à indexer.
   robots: { index: false, follow: false },
+  // Raccourci sur l'écran d'accueil de l'iPhone : s'ouvre en plein écran, comme une appli.
+  appleWebApp: { capable: true, title: "La Hotte", statusBarStyle: "default" },
 };
 
 // Le compte à rebours dépend du jour : aucune page n'est figée au build.
 export const dynamic = "force-dynamic";
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
+export const viewport: Viewport = {
+  width: "device-width", initialScale: 1, viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef2f0" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d1613" },
+  ],
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const days = daysUntilChristmas();
@@ -41,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Garland />
               <SkySleigh />
               <div>
-                <h1><Link href="/ma-liste">La Hotte familiale</Link></h1>
+                <h1><Link href="/ma-liste" className="brand"><Logo />La Hotte familiale</Link></h1>
                 <p>Chacun écrit sa liste. Les autres choisissent ce qu&apos;ils offrent, sans doublon et sans gâcher la surprise.</p>
               </div>
               <div className="top-right">
